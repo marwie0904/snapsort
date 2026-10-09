@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS results (
   data     TEXT
 );
 CREATE INDEX IF NOT EXISTS results_module_label ON results(module, label);
+CREATE INDEX IF NOT EXISTS results_module_frame ON results(module, frame_id);
 CREATE TABLE IF NOT EXISTS runs (
   media_id    INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
   module      TEXT NOT NULL,

@@ -192,6 +192,7 @@ CREATE TABLE results (
   data     TEXT       -- JSON
 );
 CREATE INDEX results_module_label ON results(module, label);
+CREATE INDEX results_module_frame ON results(module, frame_id);
 CREATE TABLE runs (
   media_id    INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
   module      TEXT NOT NULL,
