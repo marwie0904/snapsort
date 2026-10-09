@@ -306,10 +306,11 @@ def _scored(conn, module: str, q: np.ndarray, media: set[int] | None, min_score:
                                  (module, *chunk)).fetchall()
     if not rows:
         return {}, {}
-    matrix = np.stack([np.frombuffer(v, "<f4") for _, _, v in rows])
-    if matrix.shape[1] != q.shape[0]:
-        raise QueryError(f"query has {q.shape[0]} dims but stored {module} vectors have {matrix.shape[1]}. "
+    wrong = sorted({len(v) // 4 for _, _, v in rows if len(v) != 4 * q.size})  # e.g. left by an older model
+    if wrong:
+        raise QueryError(f"query has {q.size} dims but stored {module} vectors have {', '.join(map(str, wrong))}. "
                          f"re-run snapsort ingest --modules {module}")
+    matrix = np.stack([np.frombuffer(v, "<f4") for _, _, v in rows])
     score = matrix @ q if prob is None else prob(matrix @ q)
     hits = [(mid, fid, float(c)) for (fid, mid, _), c in zip(rows, score) if c >= min_score]
     return _by_media((mid, fid) for mid, fid, _ in hits), {fid: c for _, fid, c in hits}
