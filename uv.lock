@@ -1267,6 +1267,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "coremltools" },
+    { name = "networkx" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "pillow-heif" },
@@ -1285,6 +1286,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "coremltools", specifier = ">=9.0" },
+    { name = "networkx", specifier = ">=3.7" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pillow-heif", specifier = ">=1.8.0" },
