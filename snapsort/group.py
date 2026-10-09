@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS persons (
   face_id    INTEGER REFERENCES results(id) ON DELETE SET NULL,  -- representative face, for faceRef
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS persons_face ON persons(face_id);  -- every results delete looks up persons by face_id
 CREATE TABLE IF NOT EXISTS person_faces (
   result_id INTEGER PRIMARY KEY REFERENCES results(id) ON DELETE CASCADE,
   person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,

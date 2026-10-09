@@ -210,6 +210,19 @@ def test_many_photos_of_one_person_stay_one_person(db, data_dir, rng):
     assert peak < 200e6 and time.monotonic() - start < 30
 
 
+def test_deleting_results_does_not_scan_persons(db, data_dir):
+    # persons.face_id references results ON DELETE SET NULL, so every results row that ingest deletes
+    # (any module re-running on a file) is looked up in persons. Unindexed, that is a full scan per row.
+    run_grouping(data_dir)  # creates the person tables
+    with db:
+        db.executemany("INSERT INTO persons DEFAULT VALUES", [()] * 30_000)
+    add_media(db, np.ones((5000, 512)))
+    start = time.monotonic()
+    with db:
+        db.execute("DELETE FROM results WHERE module = 'faces'")
+    assert time.monotonic() - start < 1
+
+
 def test_failure_rolls_back_every_write(db, data_dir, rng, monkeypatch):
     photos(db, [person(rng) for _ in range(3)])
 
