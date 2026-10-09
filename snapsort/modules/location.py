@@ -14,6 +14,7 @@ pillow_heif.register_heif_opener()
 
 VIDEO_TAGS = ("com.apple.quicktime.location.ISO6709", "location", "location-eng")
 ISO6709 = re.compile(r"^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)")
+MAX_PLACE_KM = 50
 
 
 def gps_from_exif(gps: dict) -> tuple[float, float] | None:
@@ -61,3 +62,25 @@ def _valid(lat: float, lon: float) -> tuple[float, float] | None:
     if not (-90 <= lat <= 90 and -180 <= lon <= 180) or (lat == 0 and lon == 0):
         return None
     return lat, lon
+
+
+def place_for(lat: float, lon: float) -> dict | None:
+    """Nearest GeoNames place within MAX_PLACE_KM, or None."""
+    import reverse_geocode  # pulls scipy: imported here so discovery stays fast
+
+    p = reverse_geocode.get((lat, lon))
+    if _km(lat, lon, p["latitude"], p["longitude"]) > MAX_PLACE_KM:
+        return None
+    fields = {k: p.get(k) or None for k in ("city", "state", "country", "country_code")}
+    parts = []
+    for part in (fields["city"], fields["state"], fields["country"]):
+        if part and (not parts or parts[-1] != part):
+            parts.append(part)
+    return {"place": ", ".join(parts) or None, **fields}
+
+
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2)
+    return 2 * 6371 * math.asin(math.sqrt(a))

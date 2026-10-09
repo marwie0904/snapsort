@@ -1,11 +1,12 @@
 """Location module: GPS from EXIF and video tags, offline place names."""
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from PIL import ExifTags, Image, TiffImagePlugin
 
-from snapsort.modules.location import gps_from_exif, gps_from_iso6709, read_gps
+from snapsort.modules.location import gps_from_exif, gps_from_iso6709, place_for, read_gps
 
 SYDNEY_EXIF = {1: "S", 2: (33.0, 51.0, 24.48), 3: "E", 4: (151.0, 12.0, 55.08)}  # Opera House
 VIDEO_META = {
@@ -94,3 +95,26 @@ def test_read_gps_raises_when_ffprobe_fails(tmp_path):
     path.write_bytes(b"not a video")
     with pytest.raises(RuntimeError, match="ffprobe failed"):
         read_gps(str(path), "video")
+
+
+# --- Place names ---
+
+def test_place_name_has_city_state_country():
+    p = place_for(40.758, -73.9855)
+    assert p == {"place": "Times Square, New York, United States", "city": "Times Square",
+                 "state": "New York", "country": "United States", "country_code": "US"}
+
+
+def test_springfields_get_different_names():
+    illinois, missouri = place_for(39.7817, -89.6501), place_for(37.2153, -93.2982)
+    assert (illinois["state"], missouri["state"]) == ("Illinois", "Missouri")
+    assert illinois["place"] != missouri["place"]
+
+
+def test_no_place_far_from_land():
+    assert place_for(0.0, -160.0) is None
+
+
+def test_import_does_not_load_geocoder():
+    code = "import sys, snapsort.modules.location; assert 'reverse_geocode' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)
