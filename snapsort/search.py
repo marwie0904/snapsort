@@ -11,7 +11,7 @@ from snapsort.ingest import connect, load_image
 
 GAP = 2.0   # seconds; matches this close merge into one segment, which bridges one missed 1 fps frame
 SORTS = ("similarity", "newest", "oldest", "name")
-MIN_SCORE = 0.5   # provisional; Task 4's calibration replaces it and records the evidence in the design's Findings
+MIN_SCORE = 0.5   # calibrated on a real folder, see the design's Findings
 CHUNK = 900       # media ids per IN (...) query, under SQLite's oldest variable limit (999)
 
 Match = dict[int, set[int] | None]   # media id -> matched frame ids; None = the whole file, no frame marks
