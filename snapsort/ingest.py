@@ -1,0 +1,118 @@
+"""Ingest: resolve inputs, extract frames, run modules, validate and store results."""
+import json
+import shutil
+import sqlite3
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import numpy as np
+import pillow_heif
+from PIL import Image, ImageOps
+
+from snapsort.contract import Frame, Module, Result
+
+pillow_heif.register_heif_opener()
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
+VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv", ".webm"}
+FPS = 1
+BATCH = 16
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS media (
+  id       INTEGER PRIMARY KEY,
+  path     TEXT NOT NULL UNIQUE,
+  kind     TEXT NOT NULL CHECK (kind IN ('image','video')),
+  added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS frames (
+  id       INTEGER PRIMARY KEY,
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  idx      INTEGER NOT NULL,
+  ts       REAL,
+  path     TEXT NOT NULL,
+  UNIQUE (media_id, idx)
+);
+CREATE TABLE IF NOT EXISTS results (
+  id       INTEGER PRIMARY KEY,
+  frame_id INTEGER NOT NULL REFERENCES frames(id) ON DELETE CASCADE,
+  module   TEXT NOT NULL,
+  label    TEXT,
+  score    REAL,
+  bbox     TEXT,
+  vector   BLOB,
+  data     TEXT
+);
+CREATE INDEX IF NOT EXISTS results_module_label ON results(module, label);
+CREATE TABLE IF NOT EXISTS runs (
+  media_id    INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  module      TEXT NOT NULL,
+  version     TEXT NOT NULL,
+  status      TEXT NOT NULL CHECK (status IN ('done','error')),
+  error       TEXT,
+  finished_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (media_id, module)
+);
+"""
+
+
+class ContractError(Exception):
+    """A module returned output that breaks the contract."""
+
+
+class SetupError(Exception):
+    """A module's setup() raised."""
+
+
+def _is_num(v) -> bool:
+    return isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, (bool, np.bool_))
+
+
+def validate(results: list[Result], frames: list[Frame]) -> list[Result]:
+    """Check results against the contract. Returns normalized copies or raises ContractError."""
+    if not isinstance(results, list):
+        raise ContractError(f"process() must return a list, got {type(results).__name__}")
+    idxs = {f.idx for f in frames}
+    out, dim = [], None
+    for r in results:
+        if not isinstance(r, Result):
+            raise ContractError(f"expected Result, got {type(r).__name__}")
+        if r.frame_idx not in idxs:
+            raise ContractError(f"frame_idx {r.frame_idx} is not in this batch")
+        label = r.label
+        if label is not None:
+            if not isinstance(label, str):
+                raise ContractError(f"label must be str, got {type(label).__name__}")
+            label = label.strip().lower()
+        if r.score is not None and not (_is_num(r.score) and 0 <= r.score <= 1):
+            raise ContractError(f"score must be a number in [0, 1], got {r.score!r}")
+        bbox = r.bbox
+        if bbox is not None:
+            if not isinstance(bbox, (tuple, list, np.ndarray)) or len(bbox) != 4 \
+                    or not all(_is_num(v) and 0 <= v <= 1 for v in bbox):
+                raise ContractError(f"bbox must be 4 numbers in [0, 1], got {bbox!r}")
+            bbox = tuple(float(v) for v in bbox)
+        vector = r.vector
+        if vector is not None:
+            if not isinstance(vector, np.ndarray) or vector.ndim != 1 or vector.size == 0 \
+                    or not (np.issubdtype(vector.dtype, np.integer) or np.issubdtype(vector.dtype, np.floating)):
+                raise ContractError("vector must be a non-empty 1-D numeric np.ndarray")
+            vector = vector.astype("<f4")
+            if not np.isfinite(vector).all():
+                raise ContractError("vector has NaN or inf values")
+            if dim is None:
+                dim = vector.size
+            elif vector.size != dim:
+                raise ContractError(f"vector dim {vector.size} != {dim} in the same output")
+        if r.data is not None:
+            if not isinstance(r.data, dict):
+                raise ContractError(f"data must be a dict, got {type(r.data).__name__}")
+            try:
+                json.dumps(r.data)
+            except (TypeError, ValueError) as e:
+                raise ContractError(f"data is not JSON-serializable: {e}") from e
+        score = None if r.score is None else float(r.score)
+        out.append(Result(int(r.frame_idx), label, score, bbox, vector, r.data))
+    return out

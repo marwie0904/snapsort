@@ -1,0 +1,26 @@
+[project]
+name = "snapsort"
+version = "0.1.0"
+description = "Local image and video processing pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.3",
+    "pillow>=12.3.0",
+    "pillow-heif>=1.8.0",
+]
+
+[project.scripts]
+snapsort = "snapsort.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
