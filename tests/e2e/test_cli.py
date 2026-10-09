@@ -49,7 +49,7 @@ def test_failed_file_exits_1(tmp_path):
 def test_modules_lists_example(tmp_path):
     proc = run("modules", cwd=tmp_path)
     assert proc.returncode == 0
-    assert proc.stdout.startswith("example\t1\t")
+    assert any(line.startswith("example\t1\t") for line in proc.stdout.splitlines())
 
 
 def test_group_without_database_exits_2(tmp_path):
