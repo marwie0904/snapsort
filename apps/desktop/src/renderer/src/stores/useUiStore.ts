@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Filter, LibrarySearch } from '@snapsort/contract';
+import { getLabelFilterIds, type Filter, type LibrarySearch, type Match, type SimilarTo } from '@snapsort/contract';
 
 export interface QuickAction {
   id: string;
@@ -59,6 +59,7 @@ interface UiState {
 
   scope: 'all' | 'images' | 'videos';
   q: string;
+  similarTo: SimilarTo | null;
   filters: Filter[];
   quickActions: QuickAction[];
   activeQuickActionId: string | null;
@@ -67,7 +68,7 @@ interface UiState {
   aiPanelOpen: boolean;
 
   // View navigation
-  currentView: 'library' | 'people' | 'person-detail' | 'media-detail';
+  currentView: 'library' | 'people' | 'person-detail' | 'media-detail' | 'scenes' | 'tags';
   selectedPersonId: number | null;
   selectedMediaId: number | null;
   currentMediaTimestamp: number;
@@ -89,11 +90,26 @@ interface UiState {
   prevMedia: (items: Array<{ id: number }>) => void;
 
   navigateToPeople: () => void;
+  navigateToScenes: () => void;
+  navigateToTags: () => void;
   navigateToPersonDetail: (id: number) => void;
   navigateToLibrary: () => void;
   setPersonName: (id: number, name: string) => void;
   togglePersonFilter: (personId: number) => void;
   filterByPersonAndNavigate: (personId: number) => void;
+
+  // Facet actions (People, Scenes, Objects, Places)
+  toggleFacetItem: (kind: 'person' | 'scene' | 'label' | 'place', id: number | string) => void;
+  setFacetMatch: (kind: 'person' | 'scene' | 'label' | 'place', match: 'all' | 'any') => void;
+  filterByFacetAndNavigate: (
+    kind: 'person' | 'scene' | 'label' | 'place',
+    ids: Array<number | string>,
+    match?: 'all' | 'any'
+  ) => void;
+  getFacetSelection: (kind: 'person' | 'scene' | 'label' | 'place') => {
+    ids: Array<number | string>;
+    match: 'all' | 'any';
+  };
 
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -103,6 +119,7 @@ interface UiState {
 
   setScope: (scope: 'all' | 'images' | 'videos') => void;
   setQ: (q: string) => void;
+  setSimilarTo: (similarTo: SimilarTo | null) => void;
   setSort: (sort: 'newest' | 'oldest' | 'relevance' | 'name' | 'similarity') => void;
   setView: (view: 'filter' | 'highlight') => void;
   toggleAiPanel: () => void;
@@ -134,6 +151,7 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   scope: 'all',
   q: '',
+  similarTo: null,
   // Default to Groom + Bride active filter matching reference screenshot
   filters: [
     { kind: 'person', ids: [1, 2], match: 'all', source: 'ai' },
@@ -236,6 +254,18 @@ export const useUiStore = create<UiState>((set, get) => ({
       selectedPersonId: null,
     }),
 
+  navigateToScenes: () =>
+    set({
+      currentView: 'scenes',
+      selectedPersonId: null,
+    }),
+
+  navigateToTags: () =>
+    set({
+      currentView: 'tags',
+      selectedPersonId: null,
+    }),
+
   navigateToPersonDetail: (id: number) =>
     set({
       currentView: 'person-detail',
@@ -259,54 +289,196 @@ export const useUiStore = create<UiState>((set, get) => ({
       };
     }),
 
-  togglePersonFilter: (personId: number) =>
+  toggleFacetItem: (kind, id) =>
     set((state) => {
-      const existingIndex = state.filters.findIndex((f) => f.kind === 'person');
-      if (existingIndex === -1) {
+      const withoutKind = state.filters.filter((f) => f.kind !== kind);
+      const existing = state.filters.find((f) => f.kind === kind);
+
+      if (kind === 'person') {
+        const numId = Number(id);
+        const existingFilter = existing as Extract<Filter, { kind: 'person' }> | undefined;
+        const currentIds = existingFilter?.ids ?? [];
+        const match = existingFilter?.match ?? 'all';
+        const newIds = currentIds.includes(numId)
+          ? currentIds.filter((i) => i !== numId)
+          : [...currentIds, numId];
+        if (newIds.length === 0) {
+          return { filters: withoutKind, activeQuickActionId: null };
+        }
+        return {
+          filters: [...withoutKind, { kind: 'person', ids: newIds, match, source: 'user' }],
+          activeQuickActionId: null,
+        };
+      }
+
+      if (kind === 'scene') {
+        const strId = String(id);
+        const existingFilter = existing as Extract<Filter, { kind: 'scene' }> | undefined;
+        const currentIds = existingFilter?.ids ?? [];
+        const match = existingFilter?.match ?? 'any';
+        const newIds = currentIds.includes(strId)
+          ? currentIds.filter((i) => i !== strId)
+          : [...currentIds, strId];
+        if (newIds.length === 0) {
+          return { filters: withoutKind, activeQuickActionId: null };
+        }
+        return {
+          filters: [...withoutKind, { kind: 'scene', ids: newIds, match, source: 'user' }],
+          activeQuickActionId: null,
+        };
+      }
+
+      if (kind === 'label') {
+        const strId = String(id);
+        const existingFilter = existing as Extract<Filter, { kind: 'label' }> | undefined;
+        const currentIds = existingFilter ? getLabelFilterIds(existingFilter) : [];
+        const match = existingFilter?.match ?? 'all';
+        const newIds = currentIds.includes(strId)
+          ? currentIds.filter((i) => i !== strId)
+          : [...currentIds, strId];
+        if (newIds.length === 0) {
+          return { filters: withoutKind, activeQuickActionId: null };
+        }
         return {
           filters: [
-            ...state.filters,
-            { kind: 'person', ids: [personId], match: 'all', source: 'user' },
+            ...withoutKind,
+            {
+              kind: 'label',
+              module: 'objects',
+              labelId: newIds[0],
+              labelIds: newIds,
+              match,
+              source: 'user',
+            },
           ],
           activeQuickActionId: null,
         };
       }
-      const existing = state.filters[existingIndex] as Extract<Filter, { kind: 'person' }>;
-      const hasId = existing.ids.includes(personId);
-      const newIds = hasId
-        ? existing.ids.filter((id) => id !== personId)
-        : [...existing.ids, personId];
 
-      if (newIds.length === 0) {
+      if (kind === 'place') {
+        const strName = String(id);
+        const existingFilter = existing as Extract<Filter, { kind: 'place' }> | undefined;
+        if (existingFilter && existingFilter.name === strName) {
+          return { filters: withoutKind, activeQuickActionId: null };
+        }
         return {
-          filters: state.filters.filter((_, idx) => idx !== existingIndex),
+          filters: [...withoutKind, { kind: 'place', name: strName, source: 'user' }],
           activeQuickActionId: null,
         };
       }
+
+      return {};
+    }),
+
+  setFacetMatch: (kind, match) =>
+    set((state) => {
+      const existingIndex = state.filters.findIndex((f) => f.kind === kind);
+      if (existingIndex === -1) return {};
       const updatedFilters = [...state.filters];
-      updatedFilters[existingIndex] = {
-        ...existing,
-        ids: newIds,
-      };
+      const existing = updatedFilters[existingIndex];
+      if (kind === 'person' && existing.kind === 'person') {
+        updatedFilters[existingIndex] = { ...existing, match };
+      } else if (kind === 'scene' && existing.kind === 'scene') {
+        updatedFilters[existingIndex] = { ...existing, match };
+      } else if (kind === 'label' && existing.kind === 'label') {
+        updatedFilters[existingIndex] = { ...existing, match };
+      }
+      return { filters: updatedFilters, activeQuickActionId: null };
+    }),
+
+  filterByFacetAndNavigate: (kind, ids, match) =>
+    set((state) => {
+      const withoutKind = state.filters.filter((f) => f.kind !== kind);
+      let newFilter: Filter | null = null;
+      if (ids.length > 0) {
+        if (kind === 'person') {
+          newFilter = {
+            kind: 'person',
+            ids: ids.map(Number),
+            match: match ?? 'all',
+            source: 'user',
+          };
+        } else if (kind === 'scene') {
+          newFilter = {
+            kind: 'scene',
+            ids: ids.map(String),
+            match: match ?? 'any',
+            source: 'user',
+          };
+        } else if (kind === 'label') {
+          const strIds = ids.map(String);
+          newFilter = {
+            kind: 'label',
+            module: 'objects',
+            labelId: strIds[0],
+            labelIds: strIds,
+            match: match ?? 'all',
+            source: 'user',
+          };
+        } else if (kind === 'place') {
+          newFilter = {
+            kind: 'place',
+            name: String(ids[0]),
+            source: 'user',
+          };
+        }
+      }
       return {
-        filters: updatedFilters,
+        currentView: 'library',
+        selectedPersonId: null,
+        filters: newFilter ? [...withoutKind, newFilter] : withoutKind,
         activeQuickActionId: null,
       };
     }),
 
-  filterByPersonAndNavigate: (personId: number) =>
-    set((state) => {
-      const withoutPerson = state.filters.filter((f) => f.kind !== 'person');
+  getFacetSelection: (kind) => {
+    const state = get();
+    if (kind === 'person') {
+      const f = state.filters.find((filter) => filter.kind === 'person') as
+        | Extract<Filter, { kind: 'person' }>
+        | undefined;
       return {
-        currentView: 'library',
-        selectedPersonId: null,
-        filters: [
-          ...withoutPerson,
-          { kind: 'person', ids: [personId], match: 'all', source: 'user' },
-        ],
-        activeQuickActionId: null,
+        ids: f?.ids ?? [],
+        match: f?.match ?? 'all',
       };
-    }),
+    }
+    if (kind === 'scene') {
+      const f = state.filters.find((filter) => filter.kind === 'scene') as
+        | Extract<Filter, { kind: 'scene' }>
+        | undefined;
+      return {
+        ids: f?.ids ?? [],
+        match: f?.match ?? 'any',
+      };
+    }
+    if (kind === 'label') {
+      const f = state.filters.find((filter) => filter.kind === 'label') as
+        | Extract<Filter, { kind: 'label' }>
+        | undefined;
+      return {
+        ids: f ? getLabelFilterIds(f) : [],
+        match: f?.match ?? 'all',
+      };
+    }
+    if (kind === 'place') {
+      const f = state.filters.find((filter) => filter.kind === 'place') as
+        | Extract<Filter, { kind: 'place' }>
+        | undefined;
+      return {
+        ids: f ? [f.name] : [],
+        match: 'all',
+      };
+    }
+    return { ids: [], match: 'all' };
+  },
+
+  togglePersonFilter: (personId: number) => {
+    get().toggleFacetItem('person', personId);
+  },
+
+  filterByPersonAndNavigate: (personId: number) => {
+    get().filterByFacetAndNavigate('person', [personId]);
+  },
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -348,6 +520,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       filters: state.filters.filter((f) => f.kind !== 'folder'),
     })),
   setQ: (q) => set({ q }),
+  setSimilarTo: (similarTo) => set((state) => ({ similarTo, sort: similarTo ? 'similarity' : state.sort })),
   setSort: (sort) => set({ sort }),
   setView: (view) => set({ view }),
   toggleAiPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),
@@ -423,6 +596,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     return {
       scope: s.scope,
       q: s.q || undefined,
+      similarTo: s.similarTo || undefined,
       f: s.filters,
       sort: s.sort,
       view: s.view,

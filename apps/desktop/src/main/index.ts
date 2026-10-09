@@ -234,6 +234,10 @@ ipcMain.handle('api:listPlaces', async () => {
   return await mockApi.listPlaces();
 });
 
+ipcMain.handle('api:listScenes', async () => {
+  return await mockApi.listScenes();
+});
+
 ipcMain.handle('api:listPeople', async () => {
   return await mockApi.listPeople();
 });

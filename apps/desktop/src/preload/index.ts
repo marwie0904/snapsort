@@ -12,6 +12,7 @@ const api: SnapsortApi = {
   getCounts: () => ipcRenderer.invoke('api:getCounts'),
   getLabelManifest: () => ipcRenderer.invoke('api:getLabelManifest'),
   listPlaces: () => ipcRenderer.invoke('api:listPlaces'),
+  listScenes: () => ipcRenderer.invoke('api:listScenes'),
   listPeople: () => ipcRenderer.invoke('api:listPeople'),
   renamePerson: (id, name) => ipcRenderer.invoke('api:renamePerson', id, name),
   listFolders: () => ipcRenderer.invoke('api:listFolders'),

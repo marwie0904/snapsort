@@ -45,16 +45,41 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
           >
             {/* Card Thumbnail Container */}
             <div
-              className={`relative aspect-[16/10] rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] shadow-xs overflow-hidden transition-all duration-150 ${
+              className={`relative aspect-[16/10] rounded-xl bg-[var(--card-bg)] overflow-hidden transition-all duration-150 ${
                 showYellowRing
-                  ? 'ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--ring-offset)]'
-                  : 'hover:ring-1 hover:ring-[var(--border-focus)]'
+                  ? 'border-2 border-[var(--accent)] shadow-[0_0_16px_-2px_rgba(255,196,0,0.25)]'
+                  : 'border border-[var(--card-border)] hover:border-[var(--border-focus)]'
               }`}
             >
-              {/* Media Preview Image / Placeholder */}
-              <div className="w-full h-full bg-[var(--surface-2)] flex items-center justify-center">
-                {/* Fallback pattern */}
-                <div className="w-8 h-8 rounded-lg bg-[var(--surface-3)]/70" />
+              {/* Media Preview Image with SVG fallback */}
+              <div className="w-full h-full bg-[var(--surface-2)] relative flex items-center justify-center">
+                <img
+                  src={
+                    item.kind === 'video'
+                      ? `snapsort-media://frame/${item.id}/${item.bestFrameTs ?? 0}`
+                      : `snapsort-media://preview/${item.id}`
+                  }
+                  alt={item.name}
+                  loading="lazy"
+                  onError={(e) => {
+                    // Graceful fallback if protocol or file is unreached
+                    const img = e.currentTarget;
+                    img.style.display = 'none';
+                    if (img.nextElementSibling) {
+                      (img.nextElementSibling as HTMLElement).style.display = 'flex';
+                    }
+                  }}
+                  className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                />
+                {/* Fallback pattern when image cannot load */}
+                <div className="hidden absolute inset-0 bg-[var(--surface-2)] flex-col items-center justify-center gap-1.5 p-2 text-center">
+                  <div className="w-8 h-8 rounded-lg bg-[var(--surface-3)]/70 flex items-center justify-center text-[var(--text-muted)] text-[10px]">
+                    {item.kind === 'video' ? '▶' : 'IMG'}
+                  </div>
+                  <span className="text-[10px] text-[var(--text-muted)] truncate max-w-full">
+                    {item.name}
+                  </span>
+                </div>
               </div>
 
               {/* Add to Shelf Button */}
@@ -68,6 +93,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
                     addItem(item);
                   }
                 }}
+                aria-label={inShelf ? `Remove ${item.name} from Shelf` : `Add ${item.name} to Shelf`}
                 title={inShelf ? 'Remove from Shelf' : 'Add to Shelf'}
                 className={`absolute top-2 right-2 p-1 rounded-md backdrop-blur-xs transition-all cursor-pointer z-10 ${
                   inShelf

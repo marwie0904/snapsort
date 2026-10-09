@@ -122,13 +122,13 @@ export const Wordmark: React.FC<WordmarkProps> = ({
             src={lightSrc}
             alt={alt}
             draggable={false}
-            className="hidden dark:block h-full w-auto object-contain select-none pointer-events-none"
+            className="hidden dark:block wordmark-theme-dark h-full w-auto object-contain select-none pointer-events-none"
           />
           <img
             src={darkSrc}
             alt={alt}
             draggable={false}
-            className="block dark:hidden h-full w-auto object-contain select-none pointer-events-none"
+            className="block dark:hidden wordmark-theme-light h-full w-auto object-contain select-none pointer-events-none"
           />
         </>
       )}

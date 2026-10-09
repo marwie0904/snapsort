@@ -9,11 +9,13 @@ import {
   MediaSummary,
   Person,
   PlaceSummary,
+  SceneSummary,
   SidebarCounts,
   SnapsortApi,
   ShelfItem,
   Thread,
   ThreadDetail,
+  getLabelFilterIds,
 } from '@snapsort/contract';
 import {
   mockCounts,
@@ -95,8 +97,18 @@ export class MockSnapsortApi implements SnapsortApi {
             if (!hasAny) return false;
           }
         } else if (f.kind === 'label') {
-          const hasLabel = m.labels.some((l) => l.labelId === f.labelId);
-          if (!hasLabel) return false;
+          const ids = getLabelFilterIds(f);
+          if (ids.length > 0) {
+            const has = (id: string) => m.labels.some((l) => l.labelId === id);
+            const ok = (f.match ?? 'all') === 'all' ? ids.every(has) : ids.some(has);
+            if (!ok) return false;
+          }
+        } else if (f.kind === 'scene') {
+          if (f.ids.length > 0) {
+            const has = (id: string) => (m.tags ?? []).some((t) => t.id === id);
+            const ok = f.match === 'all' ? f.ids.every(has) : f.ids.some(has);
+            if (!ok) return false;
+          }
         } else if (f.kind === 'place') {
           if (m.place?.name !== f.name) return false;
         } else if (f.kind === 'mediaKind') {
@@ -260,6 +272,7 @@ export class MockSnapsortApi implements SnapsortApi {
       people: this.people.length,
       places: mockPlaces.length,
       objects: mockLabelManifest.modules[0].labels.length,
+      scenes: (await this.listScenes()).length,
     };
   }
 
@@ -269,6 +282,27 @@ export class MockSnapsortApi implements SnapsortApi {
 
   async listPlaces(): Promise<PlaceSummary[]> {
     return mockPlaces;
+  }
+
+  async listScenes(): Promise<SceneSummary[]> {
+    const byId = new Map<string, SceneSummary>();
+    for (const m of this.media) {
+      for (const t of m.tags ?? []) {
+        const existing = byId.get(t.id);
+        if (existing) {
+          existing.count++;
+        } else {
+          byId.set(t.id, {
+            id: t.id,
+            name: t.name,
+            count: 1,
+            coverMediaId: m.id,
+            coverTs: t.timestamps?.[0],
+          });
+        }
+      }
+    }
+    return [...byId.values()].sort((a, b) => b.count - a.count);
   }
 
   async listPeople(): Promise<Person[]> {

@@ -14,14 +14,13 @@ function getApi() {
   return mockApiFallback;
 }
 
-// Deterministic pleasing gradient backgrounds for face avatars
+// Obsidian-calibrated surface styles for face avatars
 const avatarGradients = [
-  'from-amber-600/30 to-yellow-500/20 text-[#FFC400]',
-  'from-sky-600/30 to-blue-500/20 text-[#5AC8FA]',
-  'from-emerald-600/30 to-teal-500/20 text-emerald-400',
-  'from-rose-600/30 to-pink-500/20 text-rose-400',
-  'from-purple-600/30 to-indigo-500/20 text-purple-400',
-  'from-orange-600/30 to-amber-500/20 text-orange-400',
+  'from-[var(--surface-3)] to-[var(--surface-2)] text-[var(--accent)]',
+  'from-[var(--surface-3)] to-[var(--surface-2)] text-[var(--overlay-object,#5AC8FA)]',
+  'from-[var(--surface-3)] to-[var(--surface-2)] text-[var(--text)]',
+  'from-[var(--surface-3)] to-[var(--surface-2)] text-[var(--accent)]',
+  'from-[var(--surface-3)] to-[var(--surface-2)] text-[var(--overlay-object,#5AC8FA)]',
 ];
 
 export const PeopleView: React.FC = () => {

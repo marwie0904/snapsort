@@ -140,6 +140,11 @@ export const ShelfWindow: React.FC = () => {
           <button
             type="button"
             onClick={togglePin}
+            aria-label={
+              isPinned
+                ? 'Unpin shelf window'
+                : 'Pin shelf window always on top'
+            }
             title={
               isPinned
                 ? 'Always on top: ACTIVE (Click to unpin)'
@@ -159,6 +164,7 @@ export const ShelfWindow: React.FC = () => {
             type="button"
             onClick={closeShelf}
             title="Close Shelf"
+            aria-label="Close shelf window"
             className="p-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-all cursor-pointer"
           >
             <X size={13} />
@@ -174,6 +180,7 @@ export const ShelfWindow: React.FC = () => {
             <button
               type="button"
               onClick={allSelected ? clearSelection : selectAll}
+              aria-label={allSelected ? 'Deselect all items' : 'Select all items'}
               className="flex items-center gap-1 text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
             >
               {allSelected ? <CheckSquare size={13} className="text-[var(--accent)]" /> : <Square size={13} />}
@@ -209,6 +216,7 @@ export const ShelfWindow: React.FC = () => {
               type="button"
               onClick={clearShelf}
               title="Empty shelf"
+              aria-label="Empty shelf"
               className="p-1 rounded-md text-[var(--text-muted)] hover:text-red-400 hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
             >
               <Trash2 size={13} />
@@ -220,7 +228,7 @@ export const ShelfWindow: React.FC = () => {
       {/* 3. Drag Drop Overlay Indicator */}
       {isDragOver && (
         <div className="absolute inset-x-3 top-14 bottom-10 z-50 rounded-xl bg-[var(--accent)]/10 border-2 border-dashed border-[var(--accent)] flex flex-col items-center justify-center pointer-events-none backdrop-blur-xs">
-          <Sparkles size={28} className="text-[var(--accent)] mb-2 animate-bounce" />
+          <Sparkles size={28} className="text-[var(--accent)] mb-2 animate-pulse" />
           <span className="text-xs font-bold text-[var(--accent)]">
             Drop footage to add to Shelf
           </span>
@@ -280,6 +288,7 @@ export const ShelfWindow: React.FC = () => {
                         e.stopPropagation();
                         toggleSelect(item.id);
                       }}
+                      aria-label={isSelected ? `Deselect ${item.name}` : `Select ${item.name}`}
                       className="absolute top-1.5 left-1.5 p-1 rounded-md bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer"
                     >
                       {isSelected ? (
@@ -297,6 +306,7 @@ export const ShelfWindow: React.FC = () => {
                         removeItem(item.id);
                       }}
                       title="Remove from Shelf"
+                      aria-label={`Remove ${item.name} from shelf`}
                       className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/60 hover:bg-red-500/80 text-white opacity-0 group-hover:opacity-100 backdrop-blur-xs transition-all cursor-pointer"
                     >
                       <X size={11} />

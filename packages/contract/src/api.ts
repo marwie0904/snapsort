@@ -140,6 +140,8 @@ export const SidebarCountsSchema = z.object({
   people: z.number().int(),
   places: z.number().int(),
   objects: z.number().int(),
+  // FRONTEND-PROPOSED: pending backend review — number of distinct scenes.
+  scenes: z.number().int().optional(),
 });
 export type SidebarCounts = z.infer<typeof SidebarCountsSchema>;
 
@@ -170,6 +172,18 @@ export const PlaceSummarySchema = z.object({
   count: z.number().int(),
 });
 export type PlaceSummary = z.infer<typeof PlaceSummarySchema>;
+
+// FRONTEND-PROPOSED: pending backend review — Scene facet listing for the Scenes browse page.
+export const SceneSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  count: z.number().int(),
+  /** Media used as the card cover. */
+  coverMediaId: z.number().int().optional(),
+  /** For video covers, the frame timestamp (seconds). */
+  coverTs: z.number().optional(),
+});
+export type SceneSummary = z.infer<typeof SceneSummarySchema>;
 
 export interface ChatMessage {
   id: string;
@@ -230,6 +244,8 @@ export interface SnapsortApi {
   getCounts(): Promise<SidebarCounts>;
   getLabelManifest(): Promise<LabelManifest>;
   listPlaces(): Promise<PlaceSummary[]>;
+  // FRONTEND-PROPOSED: pending backend review.
+  listScenes(): Promise<SceneSummary[]>;
 
   // people
   listPeople(): Promise<Person[]>;

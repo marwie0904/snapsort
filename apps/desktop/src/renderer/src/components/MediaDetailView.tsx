@@ -197,6 +197,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
             <button
               type="button"
               onClick={() => prevMedia(items)}
+              aria-label="Previous item (←)"
               className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)] transition-all cursor-pointer"
               title="Previous item (←)"
             >
@@ -210,6 +211,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
             <button
               type="button"
               onClick={() => nextMedia(items)}
+              aria-label="Next item (→)"
               className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)] transition-all cursor-pointer"
               title="Next item (→)"
             >
