@@ -10,7 +10,7 @@ import numpy as np
 
 from snapsort.ingest import connect
 
-THRESHOLD = 0.55   # cosine; within one media file and across files
+THRESHOLD = 0.5    # cosine; within one media file and across files (0.55 split turned heads in video)
 CENTROIDS = 20     # per person
 KMEANS_ITERS = 20
 SEED = 42

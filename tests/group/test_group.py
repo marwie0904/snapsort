@@ -122,7 +122,7 @@ def test_new_faces_join_existing_person(db, data_dir, rng):
     assert len(set(person_of(db, first + later))) == 1
     assert db.execute("SELECT count(*) FROM person_centroids").fetchone() == (7,)  # refreshed: one per photo
     scores = db.execute(f"SELECT score FROM person_faces WHERE result_id IN ({','.join(map(str, later))})")
-    assert all(0.55 <= s < 1 for (s,) in scores)  # the cosine that placed the face
+    assert all(0.5 <= s < 1 for (s,) in scores)  # the cosine that placed the face
 
 
 def test_person_keeps_id_and_name_across_reingest(db, data_dir, rng):
@@ -333,7 +333,9 @@ def test_lfw_deviation_4_vs_full_rebuild(data_dir, monkeypatch):
     for (name, case), (p, m, s) in scores.items():
         print(f"{name:12s} {case:10s} precision {p:.4f}  mixed groups {m}  share {s:.4f}")
     p, m, s = scores["deviation 4", "2 passes"]
-    assert p >= 0.995 and m <= 1 and s >= 0.95  # the design's check; share floor as measured on the module (0.954)
+    # the design's check; share floor as measured on the module (0.954). Two mixed groups since the 0.5 cut-off
+    # with five-point alignment (measured: precision 0.9991, mixed 2, share 0.9652), accepted by the user.
+    assert p >= 0.995 and m <= 2 and s >= 0.95
     for case in ("2 passes", "re-ingest"):  # the user's rule for deviation 4: within 5% of the rebuild
         (p4, _, s4), (pr, _, sr) = scores["deviation 4", case], scores["rebuild", case]
         assert p4 >= 0.95 * pr and s4 >= 0.95 * sr, case

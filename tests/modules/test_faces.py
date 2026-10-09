@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 
 from snapsort.contract import Frame
 from snapsort.ingest import IMAGE_EXTS, load_image, validate
-from snapsort.modules.faces import EYES, Face, Faces, align, clip_box, iou, passes_gate
+from snapsort.modules.faces import EYES, TEMPLATE, Face, Faces, align, clip_box, iou, passes_gate, similarity
 
 
 @pytest.fixture(scope="module")
@@ -35,7 +35,7 @@ def test_embed_empty(faces):
 
 def make_face(**change):
     base = dict(box=(0.2, 0.2, 0.3, 0.3), confidence=0.8, yaw=0.0, pitch=0.0, roll=0.0, quality=0.5,
-                left_pupil=(10.0, 10.0), right_pupil=(20.0, 10.0), nose_and_mouth=True)
+                left_pupil=(10.0, 10.0), right_pupil=(20.0, 10.0), nose_mouth=((15.0, 15.0), (11.0, 20.0), (19.0, 20.0)))
     return Face(**{**base, **change})
 
 
@@ -47,7 +47,7 @@ def make_face(**change):
     ({"box": (0.2, 0.2, 0.061, 0.061)}, True),
     ({"left_pupil": None}, False),
     ({"right_pupil": None}, False),
-    ({"nose_and_mouth": False}, False),
+    ({"nose_mouth": None}, False),
     ({"yaw": 45.0}, True),
     ({"yaw": -45.1}, False),
     ({"yaw": None}, True),
@@ -100,12 +100,15 @@ def red_centroids(crop):
     ((400, 300), (5, 40), (60, 44)),           # face at the frame edge
 ])
 def test_align_puts_pupils_on_arcface_eyes(size, left, right):
+    """The five points are ArcFace's, moved so the eyes land on left and right: an exact fit."""
+    to_img = similarity(EYES, (left, right))
+    points = (to_img @ np.c_[TEMPLATE, np.ones(5)].T)[:2].T
     img = Image.new("RGB", size, "white")
     d = ImageDraw.Draw(img)
     r = math.dist(left, right) / 12
     for x, y in (left, right):
         d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 0, 0))
-    crop = align(img, left, right)
+    crop = align(img, points)
     assert crop.size == (112, 112) and crop.mode == "RGB"
     for (gx, gy), (ex, ey) in zip(red_centroids(crop), EYES):
         assert abs(gx - ex) < 1.0 and abs(gy - ey) < 1.0
@@ -113,7 +116,8 @@ def test_align_puts_pupils_on_arcface_eyes(size, left, right):
 
 def test_align_fills_outside_the_frame_with_black():
     img = Image.new("RGB", (400, 300), "white")
-    crop = align(img, (5, 40), (60, 44))
+    to_img = similarity(EYES, ((5, 40), (60, 44)))
+    crop = align(img, (to_img @ np.c_[TEMPLATE, np.ones(5)].T)[:2].T)
     assert crop.getpixel((0, 56)) == (0, 0, 0)
 
 
