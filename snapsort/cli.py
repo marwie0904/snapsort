@@ -18,8 +18,27 @@ def main(argv: list[str] | None = None) -> int:
     ingest.add_argument("paths", nargs="+", type=Path)
     ingest.add_argument("--modules", help="comma-separated module names (default: all)")
     sub.add_parser("modules", help="list discovered modules")
+    search_p = sub.add_parser("search", help="rank media by text query")
+    search_p.add_argument("query", help="natural-language description")
+    search_p.add_argument("--limit", type=int, default=10, help="max hits (default: 10)")
     sub.add_parser("group", help="group face results into persons")
     args = parser.parse_args(argv)
+
+    if args.cmd == "search":
+        try:
+            # Imported here so other commands don't need clip_embed's deps (torch etc.).
+            from snapsort.search import search
+            hits = search(args.query, DATA_DIR, limit=args.limit)
+        except (FileNotFoundError, LookupError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        except Exception as e:
+            print(f"error: {type(e).__name__}: {e}", file=sys.stderr)
+            return 1
+        for h in hits:
+            ts = "" if h.ts is None else f"\tts={h.ts:.3f}"
+            print(f"{h.score:.4f}\t{h.path}\tframe={h.frame_idx}{ts}")
+        return 0
 
     if args.cmd == "group":
         if not (DATA_DIR / "snapsort.db").is_file():
