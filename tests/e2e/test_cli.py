@@ -1,8 +1,12 @@
 """The installed `snapsort` command, run as a subprocess."""
+import json
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+from PIL import Image
 
 import snapsort.cli as cli
 
@@ -79,3 +83,15 @@ def test_grouping_failure_exits_1(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "run_grouping", boom)
     assert cli.main(["group"]) == 1
     assert "grouping failed: RuntimeError: boom" in capsys.readouterr().err
+
+
+def test_search_similar_ranks_the_query_image_first(tmp_path, sample_image):
+    blue = tmp_path / "media" / "blue.png"
+    Image.new("RGB", (64, 48), (30, 30, 220)).save(blue)
+    proc = run("ingest", str(sample_image), str(blue), "--modules", "image_embed", cwd=tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    proc = run("search", "--similar", str(sample_image), "--json", cwd=tmp_path)  # default cutoff
+    assert proc.returncode == 0, proc.stderr
+    first = json.loads(proc.stdout)[0]
+    assert first["path"] == str(sample_image.resolve())
+    assert first["score"] == pytest.approx(1.0, abs=1e-3)
