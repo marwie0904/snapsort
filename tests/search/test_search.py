@@ -7,16 +7,19 @@ import numpy as np
 import pytest
 
 import snapsort.cli as cli
+from snapsort.group import SCHEMA as GROUP_SCHEMA
 from snapsort.ingest import connect
-from snapsort.search import QueryError, Segment, open_db, search, segments
+from snapsort.search import QueryError, Segment, list_people, open_db, search, segments
 
 _names = itertools.count()
 
 
 @pytest.fixture
 def db(data_dir):
+    """A grouped library: ingest's tables plus the persons tables."""
     data_dir.mkdir()
     conn = open_db(data_dir)
+    conn.executescript(GROUP_SCHEMA)
     yield conn
     conn.close()
 
@@ -188,6 +191,21 @@ def test_library_never_grouped_reports_unknown_person(data_dir):
         conn.close()
 
 
+def test_read_does_not_wait_on_a_running_ingest(data_dir):
+    data_dir.mkdir()
+    writer = connect(data_dir / "snapsort.db")  # never grouped
+    writer.execute("BEGIN IMMEDIATE")  # ingest holds the write lock while it extracts frames
+    writer.execute("INSERT INTO media (path, kind) VALUES ('/lib/x.mov', 'video')")
+    conn = open_db(data_dir)
+    try:
+        assert search(conn, [{"kind": "mediaKind", "value": "video"}]) == []
+        assert list_people(conn) == []
+    finally:
+        conn.close()
+        writer.rollback()
+        writer.close()
+
+
 def unit(v):
     return v / np.linalg.norm(v)
 
@@ -281,6 +299,27 @@ def test_similar_errors(db, tmp_path):
     for similar, message in cases:
         with pytest.raises(QueryError, match=re.escape(message)):
             search(db, [], similar)
+
+
+def test_similar_path_without_any_vectors_says_so(db, sample_image):
+    media(db, "image")  # ingested without image_embed
+    with pytest.raises(QueryError, match=re.escape(
+            "no image_embed vectors in this library. run snapsort ingest --modules image_embed")):
+        search(db, [], {"path": str(sample_image)})
+
+
+def test_similar_path_model_failure_is_a_query_error(db, q, sample_image, monkeypatch):
+    from snapsort.modules.image_embed import ImageEmbed
+
+    _, [f] = media(db, "image")
+    embed(db, f, q)
+
+    def boom(self):
+        raise OSError("model not cached")
+
+    monkeypatch.setattr(ImageEmbed, "setup", boom)
+    with pytest.raises(QueryError, match="image_embed model failed: OSError: model not cached"):
+        search(db, [], {"path": str(sample_image)})
 
 
 @pytest.fixture

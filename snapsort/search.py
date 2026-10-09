@@ -7,7 +7,6 @@ from pathlib import Path
 
 import numpy as np
 
-from snapsort.group import SCHEMA as GROUP_SCHEMA
 from snapsort.ingest import connect, load_image
 
 GAP = 2.0   # seconds; matches this close merge into one segment, which bridges one missed 1 fps frame
@@ -43,10 +42,13 @@ class Hit:
 
 
 def open_db(data_dir: Path) -> sqlite3.Connection:
-    """The library database with the grouping tables present, so a library that was never grouped has no persons."""
-    conn = connect(data_dir / "snapsort.db")
-    conn.executescript(GROUP_SCHEMA)
-    return conn
+    """The library database. Never creates the grouping tables: that write would wait on a running ingest."""
+    return connect(data_dir / "snapsort.db")
+
+
+def _grouped(conn) -> bool:
+    """Whether grouping has ever run, i.e. the persons tables exist."""
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'persons'").fetchone() is not None
 
 
 def search(conn, filters: list[dict], similar: dict | None = None, min_score: float = MIN_SCORE,
@@ -104,7 +106,8 @@ def _person(conn, f: dict) -> set[int]:
         raise QueryError(f"person ids must be integers, got {ids!r}")
     if match not in ("all", "any"):
         raise QueryError(f"person match must be all or any, got {match!r}")
-    known = {r[0] for r in conn.execute(f"SELECT id FROM persons WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    known = {r[0] for r in conn.execute(
+        f"SELECT id FROM persons WHERE id IN ({','.join('?' * len(ids))})", ids)} if _grouped(conn) else set()
     missing = [str(i) for i in ids if i not in known]
     if missing:
         raise QueryError(f"unknown person id(s): {', '.join(missing)}. see snapsort people")
@@ -158,10 +161,15 @@ def _query_vector(conn, similar: dict) -> np.ndarray:
             image = load_image(path)
         except Exception as e:  # missing, not an image, unreadable
             raise QueryError(f"cannot read query image {path}: {type(e).__name__}: {e}") from e
+        if conn.execute("SELECT 1 FROM results WHERE module = 'image_embed' LIMIT 1").fetchone() is None:
+            raise QueryError("no image_embed vectors in this library. run snapsort ingest --modules image_embed")
         from snapsort.modules.image_embed import ImageEmbed  # torch loads only for a path query
-        model = ImageEmbed()
-        model.setup()
-        return model.embed([image])[0]
+        try:
+            model = ImageEmbed()
+            model.setup()
+            return model.embed([image])[0]
+        except Exception as e:  # e.g. weights not cached and no network
+            raise QueryError(f"image_embed model failed: {type(e).__name__}: {e}") from e
     raise QueryError("similar needs mediaId or path")
 
 
@@ -218,6 +226,8 @@ def _rank(hits: list[Hit], sort: str, limit: int | None) -> list[Hit]:
 
 def list_people(conn) -> list[tuple[int, str | None, int, int]]:
     """(id, name, faces, files) per person with at least one face, most files first."""
+    if not _grouped(conn):
+        return []
     return conn.execute(
         "SELECT p.id, p.name, count(*), count(DISTINCT f.media_id) FROM persons p "
         "JOIN person_faces pf ON pf.person_id = p.id JOIN results r ON r.id = pf.result_id "
