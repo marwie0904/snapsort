@@ -1,7 +1,7 @@
 # Frontend ↔ backend wiring roadmap
 
 Date: 2026-10-10 (rev 4: built, see §0)
-Status: **Done at hackathon scope on `frontend`** (not pushed). Every roadmap item is marked built, done or cut; the user confirmed the cuts (Q17, Q18).
+Status: **Done at hackathon scope on `frontend`** (not pushed). Every roadmap item is marked built, done or cut; the user confirmed the cuts (Q17, Q18) and signed off Phase 7 on 2026-10-10.
 
 ## 0. Build status (rev 4)
 
@@ -597,3 +597,4 @@ Privacy, partial: launched from the Claude Code shell, which already has file ac
 - **rev 4** (2026-10-10): built Phases 1–7 at hackathon scope on `frontend`. §0 lists changes from the plan, results and what's open.
 - **rev 5** (2026-10-10): Phase 7 drills (permission denied, disk full, cloned drive), large-library measurements, search debounce, NaN check. Every §5 item marked built, done or cut.
 - **rev 6** (2026-10-10): user confirmed the privacy-prompt cut (Q17) and the §5 CUT items (Q18).
+- **rev 7** (2026-10-10): user signed off Phase 7.
