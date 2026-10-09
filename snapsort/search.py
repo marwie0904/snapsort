@@ -12,8 +12,9 @@ import numpy as np
 from snapsort.ingest import connect, load_image
 
 GAP = 2.0   # seconds; matches this close merge into one segment, which bridges one missed 1 fps frame
-SORTS = ("similarity", "newest", "oldest", "name")
+SORTS = ("relevance", "similarity", "newest", "oldest", "name")
 MIN_SCORE = 0.5   # calibrated on a real folder, see the design's Findings
+TEXT_MIN_SCORE = 0.01   # SigLIP match probability; provisional until calibrated on a real folder
 CHUNK = 900       # media ids per IN (...) query, under SQLite's oldest variable limit (999)
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -57,18 +58,23 @@ def _grouped(conn) -> bool:
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'persons'").fetchone() is not None
 
 
-def search(conn, filters: list[dict], similar: dict | None = None, min_score: float = MIN_SCORE,
+def search(conn, filters: list[dict], similar: dict | None = None, min_score: float | None = None,
            sort: str | None = None, limit: int | None = None, gap: float = GAP,
-           combine: str = "all", scope: str = "file") -> list[Hit]:
-    """Media matching the filters (similar counts as one), sorted, cut to limit.
+           combine: str = "all", scope: str = "file", q: str | None = None) -> list[Hit]:
+    """Media matching the filters (a similar image or text query q counts as one), sorted, cut to limit.
+    min_score: cutoff for the similar or text score; None = MIN_SCORE or TEXT_MIN_SCORE.
     combine: "all" = every filter matches the file, "any" = at least one does.
-    scope: "file" = frame-based filters (person, similar) may match on different frames of the file,
+    scope: "file" = frame-based filters (person, similar, text) may match on different frames of the file,
     "frame" = they must match on the same frame. Raises QueryError (see the design's Errors)."""
-    sort = sort or ("similarity" if similar else "newest")
+    if q is not None and similar is not None:
+        raise QueryError("use a text query or a similar image, not both")
+    sort = sort or ("relevance" if q is not None else "similarity" if similar else "newest")
     if sort not in SORTS:
         raise QueryError(f"unknown sort {sort!r}. choose from {', '.join(SORTS)}")
     if sort == "similarity" and similar is None:
         raise QueryError("sort by similarity needs a similar image")
+    if sort == "relevance" and q is None:
+        raise QueryError("sort by relevance needs a text query")
     if limit is not None and limit < 1:
         raise QueryError(f"limit must be at least 1, got {limit}")
     if combine not in ("all", "any"):
@@ -77,10 +83,14 @@ def search(conn, filters: list[dict], similar: dict | None = None, min_score: fl
         raise QueryError(f"scope must be file or frame, got {scope!r}")
     matches = [_run(conn, f, scope) for f in filters]
     scores: dict[int, float] = {}
-    if similar is not None:
+    if similar is not None or q is not None:
+        if similar is not None:
+            module, vec, prob, cutoff = "image_embed", _query_vector(conn, similar), None, MIN_SCORE
+        else:
+            module, (vec, prob), cutoff = "clip_embed", _text_query(conn, q), TEXT_MIN_SCORE
         # under AND only files every other filter matched can match, so only their vectors are read
         media = set.intersection(*(set(m) for m in matches)) if matches and combine == "all" else None
-        match, scores = _similar(conn, _query_vector(conn, similar), media, min_score)
+        match, scores = _scored(conn, module, vec, media, cutoff if min_score is None else min_score, prob)
         matches.append(match)
     if not matches:
         matched = dict.fromkeys(r[0] for r in conn.execute("SELECT id FROM media"))
@@ -262,25 +272,46 @@ def _query_vector(conn, similar: dict) -> np.ndarray:
     raise QueryError("similar needs mediaId or path")
 
 
-def _similar(conn, q: np.ndarray, media: set[int] | None,
-             min_score: float) -> tuple[Match, dict[int, float]]:
-    """Frames with an image_embed vector scoring at least min_score against q, as a Match plus their scores.
-    Only the frames of `media` are read; None means every file."""
+def _text_query(conn, q) -> tuple[np.ndarray, object]:
+    """The SigLIP text vector for q, and the function turning cosine into match probability."""
+    text = q.strip() if isinstance(q, str) else ""
+    if not text:
+        raise QueryError("text query is empty")
+    if conn.execute("SELECT 1 FROM results WHERE module = 'clip_embed' LIMIT 1").fetchone() is None:
+        raise QueryError("no clip_embed vectors in this library. run snapsort ingest --modules clip_embed")
+    from snapsort.modules.clip_embed import ClipEmbed  # torch loads only for a text query
+    try:
+        clip = ClipEmbed()
+        clip.setup()
+        return clip.embed_text([text])[0], clip.match_probability
+    except Exception as e:  # e.g. weights not cached and no network
+        raise QueryError(f"clip_embed model failed: {type(e).__name__}: {e}") from e
+
+
+def _scored(conn, module: str, q: np.ndarray, media: set[int] | None, min_score: float,
+            prob=None) -> tuple[Match, dict[int, float]]:
+    """Frames whose `module` vector scores at least min_score against q, as a Match plus their scores.
+    The score is the cosine, or prob(cosine) when given. Only the frames of `media` are read; None means every file."""
     # ponytail: reads every candidate vector per query (~300 MB at 100k frames when no other filter narrows them);
     # cache the matrix in a file or move to sqlite-vec if queries get slow
     sql = ("SELECT r.frame_id, f.media_id, r.vector FROM results r JOIN frames f ON f.id = r.frame_id "
-           "WHERE r.module = 'image_embed'")
+           "WHERE r.module = ?")
     if media is None:
-        rows = conn.execute(sql).fetchall()
+        rows = conn.execute(sql, (module,)).fetchall()
     else:
         ids, rows = list(media), []
         for s in range(0, len(ids), CHUNK):
             chunk = ids[s:s + CHUNK]
-            rows += conn.execute(f"{sql} AND f.media_id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+            rows += conn.execute(f"{sql} AND f.media_id IN ({','.join('?' * len(chunk))})",
+                                 (module, *chunk)).fetchall()
     if not rows:
         return {}, {}
-    cos = np.stack([np.frombuffer(v, "<f4") for _, _, v in rows]) @ q
-    hits = [(mid, fid, float(c)) for (fid, mid, _), c in zip(rows, cos) if c >= min_score]
+    matrix = np.stack([np.frombuffer(v, "<f4") for _, _, v in rows])
+    if matrix.shape[1] != q.shape[0]:
+        raise QueryError(f"query has {q.shape[0]} dims but stored {module} vectors have {matrix.shape[1]}. "
+                         f"re-run snapsort ingest --modules {module}")
+    score = matrix @ q if prob is None else prob(matrix @ q)
+    hits = [(mid, fid, float(c)) for (fid, mid, _), c in zip(rows, score) if c >= min_score]
     return _by_media((mid, fid) for mid, fid, _ in hits), {fid: c for _, fid, c in hits}
 
 
@@ -307,7 +338,7 @@ def _hit(media_id, path, kind, added_at, captured_at, matches, gap) -> Hit:
 
 def _rank(hits: list[Hit], sort: str, limit: int | None) -> list[Hit]:
     hits.sort(key=lambda h: h.media_id)  # ties keep id order
-    if sort == "similarity":  # under OR a file can match without a score: those go last
+    if sort in ("relevance", "similarity"):  # under OR a file can match without a score: those go last
         hits.sort(key=lambda h: (h.score is None, -(h.score or 0)))
     elif sort == "newest":  # capture time, else added_at; 1 s resolution, so a tie goes to the later insert
         hits.sort(key=lambda h: (h.captured_at or h.added_at, h.media_id), reverse=True)

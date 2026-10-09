@@ -49,7 +49,10 @@ def test_failed_file_exits_1(tmp_path):
 def test_modules_lists_example(tmp_path):
     proc = run("modules", cwd=tmp_path)
     assert proc.returncode == 0
-    assert any(line.startswith("example\t1\t") for line in proc.stdout.splitlines())
+    names = [line.split("\t", 1)[0] for line in proc.stdout.splitlines()]
+    assert "example" in names
+    assert "objects" in names
+    assert "clip_embed" in names
 
 
 def test_group_without_database_exits_2(tmp_path):

@@ -8,8 +8,8 @@ from pathlib import Path
 from snapsort.group import run_grouping
 from snapsort.ingest import run_ingest
 from snapsort.modules import discover
-from snapsort.search import (GAP, MIN_SCORE, SORTS, Hit, QueryError, Segment, list_people, list_places,
-                             open_db, search)
+from snapsort.search import (GAP, MIN_SCORE, SORTS, TEXT_MIN_SCORE, Hit, QueryError, Segment, list_people,
+                             list_places, open_db, search)
 
 DATA_DIR = Path(".snapsort")
 READS = ("group", "search", "people", "places")  # commands that need an existing database
@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("modules", help="list discovered modules")
     sub.add_parser("group", help="group face results into persons")
     s = sub.add_parser("search", help="find media matching every given filter")
+    s.add_argument("text", nargs="?", help="describe what to find (needs clip_embed vectors)")
     s.add_argument("--person", type=_ids, help="comma-separated person ids, all in the same file (see `snapsort people`)")
     s.add_argument("--any", action="store_true", help="match any --person id instead of all")
     s.add_argument("--or", dest="any_filter", action="store_true",
@@ -38,7 +39,8 @@ def main(argv: list[str] | None = None) -> int:
     similar.add_argument("--similar", type=Path, metavar="PATH", help="image to compare frames against")
     similar.add_argument("--similar-media", type=_media_ref, metavar="ID[@TS]",
                          help="stored file, and second for a video, to compare frames against")
-    s.add_argument("--min-score", type=float, default=MIN_SCORE, help=f"similarity cutoff (default {MIN_SCORE})")
+    s.add_argument("--min-score", type=float,
+                   help=f"score cutoff (default {MIN_SCORE} for --similar, {TEXT_MIN_SCORE} for text)")
     s.add_argument("--sort", choices=SORTS)
     s.add_argument("--limit", type=int)
     s.add_argument("--gap", type=float, default=GAP,
@@ -116,7 +118,7 @@ def _read(args) -> int:
         try:
             hits = search(conn, filters, similar, min_score=args.min_score, sort=args.sort, limit=args.limit,
                           gap=args.gap, combine="any" if args.any_filter else "all",
-                          scope="frame" if args.same_frame else "file")
+                          scope="frame" if args.same_frame else "file", q=args.text)
         except QueryError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
@@ -128,7 +130,7 @@ def _read(args) -> int:
         return 0
     for h in hits:
         cols = [h.path, h.kind]
-        if similar:
+        if similar or args.text is not None:
             cols.append("-" if h.score is None else f"{h.score:.2f}")  # unscored: matched another filter under --or
         if h.segments:
             cols.append(", ".join(_span(g) for g in h.segments))

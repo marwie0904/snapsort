@@ -363,10 +363,10 @@ def near(base, cos, rng):
     return cos * base + np.sqrt(1 - cos ** 2) * unit(u)
 
 
-def embed(conn, frame_id, v):
+def embed(conn, frame_id, v, module="image_embed"):
     with conn:
-        conn.execute("INSERT INTO results (frame_id, module, vector) VALUES (?, 'image_embed', ?)",
-                     (frame_id, np.asarray(v, "<f4").tobytes()))
+        conn.execute("INSERT INTO results (frame_id, module, vector) VALUES (?, ?, ?)",
+                     (frame_id, module, np.asarray(v, "<f4").tobytes()))
 
 
 @pytest.fixture
@@ -472,6 +472,82 @@ def test_similar_reads_candidates_in_chunks(db, q, rng, monkeypatch):
     assert [h.media_id for h in hits] == ids
 
 
+@pytest.fixture
+def clip(monkeypatch, q):
+    """SigLIP stand-in: every text embeds to q and probability = cosine, so tests set scores with near()."""
+    from snapsort.modules.clip_embed import ClipEmbed
+    monkeypatch.setattr(ClipEmbed, "setup", lambda self: None)
+    monkeypatch.setattr(ClipEmbed, "embed_text", lambda self, texts: np.stack([q for _ in texts]))
+    monkeypatch.setattr(ClipEmbed, "match_probability", lambda self, s: s)
+
+
+def test_text_cuts_and_ranks(db, q, rng, clip):
+    a, [fa] = media(db, "image")
+    b, [fb] = media(db, "image")
+    c, [fc] = media(db, "image")
+    for fid, cos in ((fa, 0.9), (fb, 0.6), (fc, 0.1)):
+        embed(db, fid, near(q, cos, rng), "clip_embed")
+    hits = search(db, [], q="motorcycle", min_score=0.5)
+    assert [h.media_id for h in hits] == [a, b]  # relevance is the default sort
+    assert [h.score for h in hits] == pytest.approx([0.9, 0.6], abs=1e-5)
+
+
+def test_text_default_cutoff_is_text_min_score(db, q, rng, clip, monkeypatch):
+    monkeypatch.setattr("snapsort.search.TEXT_MIN_SCORE", 0.5)
+    a, [fa] = media(db, "image")
+    _, [fb] = media(db, "image")
+    embed(db, fa, near(q, 0.6, rng), "clip_embed")
+    embed(db, fb, near(q, 0.4, rng), "clip_embed")
+    assert [h.media_id for h in search(db, [], q="motorcycle")] == [a]
+
+
+def test_text_stacks_with_person(db, q, rng, clip):
+    _, f = media(db, "video", frames=3)
+    for fid, cos in zip(f, (0.9, 0.1, 0.8)):
+        embed(db, fid, near(q, cos, rng), "clip_embed")
+    anna = person(db, [f[2]])
+    with_anna = [{"kind": "person", "ids": [anna], "match": "all"}]
+    [hit] = search(db, with_anna, q="motorcycle", min_score=0.5)
+    assert ts_of(hit) == [0.0, 2.0] and hit.best_ts == 0.0
+    [hit] = search(db, with_anna, q="motorcycle", min_score=0.5, scope="frame")
+    assert ts_of(hit) == [2.0]
+
+
+def test_text_errors(db, q, clip, monkeypatch):
+    _, [f] = media(db, "image")
+    with pytest.raises(QueryError, match=re.escape(
+            "no clip_embed vectors in this library. run snapsort ingest --modules clip_embed")):
+        search(db, [], q="motorcycle")
+    embed(db, f, q, "clip_embed")
+    cases = [
+        ({"q": "  "}, "text query is empty"),
+        ({"q": "motorcycle", "similar": {"mediaId": 1}}, "use a text query or a similar image, not both"),
+        ({"sort": "relevance"}, "sort by relevance needs a text query"),
+    ]
+    for kwargs, message in cases:
+        with pytest.raises(QueryError, match=re.escape(message)):
+            search(db, [], **kwargs)
+    monkeypatch.setattr("snapsort.modules.clip_embed.ClipEmbed.embed_text",
+                        lambda self, texts: np.zeros((1, 32), "<f4"))
+    with pytest.raises(QueryError, match=re.escape(
+            "query has 32 dims but stored clip_embed vectors have 64. re-run snapsort ingest --modules clip_embed")):
+        search(db, [], q="motorcycle")
+
+
+def test_text_model_failure_is_a_query_error(db, q, monkeypatch):
+    from snapsort.modules.clip_embed import ClipEmbed
+
+    _, [f] = media(db, "image")
+    embed(db, f, q, "clip_embed")
+
+    def boom(self):
+        raise OSError("model not cached")
+
+    monkeypatch.setattr(ClipEmbed, "setup", boom)
+    with pytest.raises(QueryError, match="clip_embed model failed: OSError: model not cached"):
+        search(db, [], q="motorcycle")
+
+
 def test_similar_errors(db, tmp_path):
     no_vector, _ = media(db, "image")
     not_image = tmp_path / "notes.txt"
@@ -550,6 +626,16 @@ def test_cli_date_flags(db, run):
     assert [h["capturedAt"] for h in json.loads(out)] == ["2026-07-15 10:00:00"]
     code, _, err = run("search", "--to", "2026-7-1")
     assert code == 2 and "date must be YYYY-MM-DD, got '2026-7-1'" in err
+
+
+def test_cli_text_search(db, run, q, rng, clip):
+    _, [f] = media(db, "image", name="bike.jpg")
+    _, [g] = media(db, "image", name="cat.jpg")
+    embed(db, f, near(q, 0.9, rng), "clip_embed")
+    embed(db, g, near(q, 0.1, rng), "clip_embed")
+    assert run("search", "motorcycle", "--min-score", "0.5") == (0, "/lib/bike.jpg  image  0.90\n1 of 2 files\n", "")
+    code, _, err = run("search", "motorcycle", "--similar-media", "1")
+    assert code == 2 and "use a text query or a similar image, not both" in err
 
 
 def test_cli_search_shows_scores_with_similar(db, run, q):
