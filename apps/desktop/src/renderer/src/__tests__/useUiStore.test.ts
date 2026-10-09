@@ -247,5 +247,86 @@ describe('useUiStore Quick Actions', () => {
       cleanup();
     });
   });
+
+  describe('Facet Actions (People, Scenes, Tags)', () => {
+    beforeEach(() => {
+      useUiStore.setState({
+        filters: [],
+        currentView: 'library',
+      });
+    });
+
+    it('toggles scene facet items with any match default', () => {
+      useUiStore.getState().toggleFacetItem('scene', 'vows');
+      let sel = useUiStore.getState().getFacetSelection('scene');
+      expect(sel.ids).toEqual(['vows']);
+      expect(sel.match).toBe('any');
+
+      useUiStore.getState().toggleFacetItem('scene', 'ceremony');
+      sel = useUiStore.getState().getFacetSelection('scene');
+      expect(sel.ids).toEqual(['vows', 'ceremony']);
+
+      useUiStore.getState().setFacetMatch('scene', 'all');
+      sel = useUiStore.getState().getFacetSelection('scene');
+      expect(sel.match).toBe('all');
+
+      useUiStore.getState().toggleFacetItem('scene', 'vows');
+      useUiStore.getState().toggleFacetItem('scene', 'ceremony');
+      sel = useUiStore.getState().getFacetSelection('scene');
+      expect(sel.ids).toEqual([]);
+    });
+
+    it('toggles tag/label facet items with all match default', () => {
+      useUiStore.getState().toggleFacetItem('label', 'dress');
+      let sel = useUiStore.getState().getFacetSelection('label');
+      expect(sel.ids).toEqual(['dress']);
+      expect(sel.match).toBe('all');
+
+      useUiStore.getState().toggleFacetItem('label', 'suit');
+      sel = useUiStore.getState().getFacetSelection('label');
+      expect(sel.ids).toEqual(['dress', 'suit']);
+    });
+
+    it('toggles place facet item', () => {
+      useUiStore.getState().toggleFacetItem('place', 'Tokyo');
+      let sel = useUiStore.getState().getFacetSelection('place');
+      expect(sel.ids).toEqual(['Tokyo']);
+
+      // Clicking another place replaces it
+      useUiStore.getState().toggleFacetItem('place', 'Kyoto');
+      sel = useUiStore.getState().getFacetSelection('place');
+      expect(sel.ids).toEqual(['Kyoto']);
+
+      // Clicking same place deselects it
+      useUiStore.getState().toggleFacetItem('place', 'Kyoto');
+      sel = useUiStore.getState().getFacetSelection('place');
+      expect(sel.ids).toEqual([]);
+    });
+
+    it('supports similarTo reverse image search in getSearchQuery', () => {
+      useUiStore.getState().setSimilarTo({ imageRef: 'ref-123', source: 'user' });
+      expect(useUiStore.getState().sort).toBe('similarity');
+
+      const query = useUiStore.getState().getSearchQuery();
+      expect(query.similarTo).toEqual({ imageRef: 'ref-123', source: 'user' });
+      expect(query.sort).toBe('similarity');
+
+      // Clearing similarTo
+      useUiStore.getState().setSimilarTo(null);
+      const queryAfter = useUiStore.getState().getSearchQuery();
+      expect(queryAfter.similarTo).toBeUndefined();
+    });
+
+    it('filters by facet and navigates to library view', () => {
+      useUiStore.getState().navigateToScenes();
+      expect(useUiStore.getState().currentView).toBe('scenes');
+
+      useUiStore.getState().filterByFacetAndNavigate('scene', ['vows'], 'any');
+      expect(useUiStore.getState().currentView).toBe('library');
+      const sel = useUiStore.getState().getFacetSelection('scene');
+      expect(sel.ids).toEqual(['vows']);
+    });
+  });
 });
+
 

@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/plus-jakarta-sans": "^5.3.0",
     "@snapsort/contract": "workspace:*",
     "@snapsort/mock": "workspace:*",
     "@snapsort/ui": "workspace:*",

@@ -8,12 +8,14 @@ describe('Branding Components', () => {
     const html = renderToStaticMarkup(<Wordmark size="md" />);
     expect(html).toContain('hidden dark:block');
     expect(html).toContain('block dark:hidden');
+    expect(html).toContain('wordmark-theme-dark');
+    expect(html).toContain('wordmark-theme-light');
     expect(html).toContain('alt="snapsort"');
     expect(html).toContain('h-[26px]');
     expect(html).toContain('w-[104px]');
   });
 
-  it('renders explicit dark theme Wordmark', () => {
+  it('renders explicit dark theme Wordmark with light asset', () => {
     const html = renderToStaticMarkup(<Wordmark theme="dark" size="sm" />);
     expect(html).toContain('alt="snapsort"');
     expect(html).toContain('h-5');
@@ -21,15 +23,17 @@ describe('Branding Components', () => {
     // Only one image for explicit theme
     const imgMatches = html.match(/<img/g);
     expect(imgMatches?.length).toBe(1);
+    expect(html).toContain('wordmark-light');
   });
 
-  it('renders explicit light theme Wordmark', () => {
+  it('renders explicit light theme Wordmark with dark asset', () => {
     const html = renderToStaticMarkup(<Wordmark theme="light" size="lg" />);
     expect(html).toContain('alt="snapsort"');
     expect(html).toContain('h-8');
     expect(html).toContain('w-[128px]');
     const imgMatches = html.match(/<img/g);
     expect(imgMatches?.length).toBe(1);
+    expect(html).toContain('wordmark.png');
   });
 
   it('renders legacy dot variant for backwards compatibility', () => {

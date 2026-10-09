@@ -15,6 +15,7 @@
   --accent-hover: #e5b000;
   --accent-active: #cc9d00;
   --accent-ink: #111111;
+  --accent-text: #ffc400;
   --accent-subtle: rgba(255, 196, 0, 0.12);
   --overlay-object: #5ac8fa;
   --danger: #ff5a4e;
@@ -28,24 +29,27 @@
   --shadow-dropdown: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
 
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 }
 
-[data-theme='light'] {
+[data-theme='light'],
+.light {
   --surface-0: #f5f5f7;
   --surface-1: #ffffff;
   --surface-2: #f0f1f3;
   --surface-3: #e4e6ea;
   --border: #e5e7eb;
   --border-subtle: #f3f4f6;
-  --border-focus: #d97706;
+  --border-focus: #ffc400;
   --text: #111827;
   --text-muted: #6b7280;
   --text-dim: #9ca3af;
-  --accent: #f59e0b;
-  --accent-hover: #d97706;
-  --accent-active: #b45309;
+  --accent: #ffc400;
+  --accent-hover: #e5b000;
+  --accent-active: #cc9d00;
   --accent-ink: #111111;
-  --accent-subtle: rgba(245, 158, 11, 0.14);
+  --accent-text: #b45309;
+  --accent-subtle: rgba(255, 196, 0, 0.16);
   --overlay-object: #0284c7;
   --danger: #dc2626;
   --success: #16a34a;
@@ -58,6 +62,7 @@
   --shadow-dropdown: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
 
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 }
 
 body {
@@ -78,4 +83,22 @@ header,
 nav,
 .theme-transition {
   transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
+}
+
+/* Bulletproof Wordmark theme switching for auto variant */
+[data-theme='light'] .wordmark-theme-dark,
+.light .wordmark-theme-dark {
+  display: none !important;
+}
+[data-theme='light'] .wordmark-theme-light,
+.light .wordmark-theme-light {
+  display: block !important;
+}
+[data-theme='dark'] .wordmark-theme-light,
+.dark .wordmark-theme-light {
+  display: none !important;
+}
+[data-theme='dark'] .wordmark-theme-dark,
+.dark .wordmark-theme-dark {
+  display: block !important;
 }

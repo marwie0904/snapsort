@@ -140,6 +140,8 @@ export const SidebarCountsSchema = z.object({
   people: z.number().int(),
   places: z.number().int(),
   objects: z.number().int(),
+  // FRONTEND-PROPOSED: pending backend review — number of distinct scenes.
+  scenes: z.number().int().optional(),
 });
 export type SidebarCounts = z.infer<typeof SidebarCountsSchema>;
 
@@ -171,6 +173,18 @@ export const PlaceSummarySchema = z.object({
 });
 export type PlaceSummary = z.infer<typeof PlaceSummarySchema>;
 
+// FRONTEND-PROPOSED: pending backend review — Scene facet listing for the Scenes browse page.
+export const SceneSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  count: z.number().int(),
+  /** Media used as the card cover. */
+  coverMediaId: z.number().int().optional(),
+  /** For video covers, the frame timestamp (seconds). */
+  coverTs: z.number().optional(),
+});
+export type SceneSummary = z.infer<typeof SceneSummarySchema>;
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -201,6 +215,16 @@ export type ChatStreamCallback = (event: {
   error?: string;
 }) => void;
 
+export const ShelfItemSchema = z.object({
+  id: z.number().int(),
+  kind: MediaKindSchema,
+  name: z.string(),
+  path: z.string(),
+  durationS: z.number().optional(),
+  thumbUrl: z.string().optional(),
+});
+export type ShelfItem = z.infer<typeof ShelfItemSchema>;
+
 export interface SnapsortApi {
   // library + search
   query(req: {
@@ -220,6 +244,8 @@ export interface SnapsortApi {
   getCounts(): Promise<SidebarCounts>;
   getLabelManifest(): Promise<LabelManifest>;
   listPlaces(): Promise<PlaceSummary[]>;
+  // FRONTEND-PROPOSED: pending backend review.
+  listScenes(): Promise<SceneSummary[]>;
 
   // people
   listPeople(): Promise<Person[]>;
@@ -239,4 +265,16 @@ export interface SnapsortApi {
   listThreads(): Promise<Thread[]>;
   createThread(title?: string): Promise<Thread>;
   getThread(id: number): Promise<ThreadDetail>;
+
+  // Shelf
+  openShelfWindow(): Promise<void>;
+  closeShelfWindow(): Promise<void>;
+  toggleShelfPin(pinned?: boolean): Promise<boolean>;
+  isShelfPinned(): Promise<boolean>;
+  getShelfItems(): Promise<ShelfItem[]>;
+  addToShelf(items: ShelfItem | ShelfItem[]): Promise<ShelfItem[]>;
+  removeFromShelf(id: number): Promise<ShelfItem[]>;
+  clearShelf(): Promise<void>;
+  startNativeDrag(filePaths: string[]): Promise<void>;
+  onShelfSync?(callback: (items: ShelfItem[]) => void): () => void;
 }

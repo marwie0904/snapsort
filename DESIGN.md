@@ -468,3 +468,23 @@ When styling any landing page element:
 6. **Highlights**: Accent yellow `#FFC400` border with a subtle golden glow.
 7. **Computer Vision elements**: Cyan `#5AC8FA` bounding boxes and labels.
 8. **Font**: Plus Jakarta Sans everywhere, monospace for CLI and shortcuts.
+
+---
+
+## 11. Desktop App Surfaces & Density Specification
+
+While Sections 1–8 define the binding brand palette, radii, borders, and signature elements across both web and desktop, **in-app desktop windows** require higher information density than marketing landing pages. The authoritative desktop application type scale is:
+
+| Surface Level | Font Size | Tracking | Weight | Line Height | Usage |
+|---|---|---|---|---|---|
+| **App Title / Primary Header** | `24px` – `28px` (`text-2xl` / `text-3xl`) | `-0.025em` | `700` (Bold) | `1.2` | Main library header ("All footage"), People view title |
+| **Section Header / Modal Title** | `16px` – `18px` (`text-base` / `text-lg`) | `-0.02em` | `600` / `700` | `1.3` | Panel titles ("Ask AI", "Shelf"), popover headers |
+| **Card & Item Headings** | `13px` – `14px` (`text-xs` / `text-sm`) | `-0.01em` | `600` (SemiBold) | `1.35` | Thumbnail filenames, person names, folder list items |
+| **Body Regular** | `12px` – `13px` (`text-xs`) | `normal` | `400` / `500` | `1.4` | Chat message bubbles, descriptions, toasts |
+| **Micro / Metadata / Badges** | `10px` – `11px` (`text-[10px]` / `text-[11px]`) | `+0.01em` | `500` / `600` | `1.2` | Duration tags, pill counts, timestamps (`tabular-nums`) |
+
+### App Density Rules:
+- **Titlebar Chrome:** On macOS (`titleBarStyle: 'hiddenInset'`), provide a dedicated top drag strip with traffic-light safe margin (`pt-7` to `pt-8`) so window controls never obscure brand marks or buttons.
+- **Offline Fonts:** The desktop app must bundle `Plus Jakarta Sans` and `JetBrains Mono` locally. Zero cloud calls allowed on launch.
+- **Match Outline:** Matching media cards apply `border-2 border-[#FFC400]` with `box-shadow: 0 0 16px -2px rgba(255, 196, 0, 0.25)`.
+

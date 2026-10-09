@@ -11,13 +11,38 @@ export const PersonFilterSchema = z.object({
 });
 export type PersonFilter = z.infer<typeof PersonFilterSchema>;
 
+export const MatchSchema = z.enum(['all', 'any']);
+export type Match = z.infer<typeof MatchSchema>;
+
+// "Tags" facet in the UI (object labels).
 export const LabelFilterSchema = z.object({
   kind: z.literal('label'),
   module: z.string(),
-  labelId: z.string(),
+  /** @deprecated single-label form; prefer `labelIds`. Kept for backward compatibility. */
+  labelId: z.string().optional(),
+  // FRONTEND-PROPOSED: pending backend review — multi-select tags.
+  labelIds: z.array(z.string()).optional(),
+  // FRONTEND-PROPOSED: pending backend review — how `labelIds` combine (default 'all').
+  match: MatchSchema.optional(),
   source: SourceSchema,
 });
 export type LabelFilter = z.infer<typeof LabelFilterSchema>;
+
+/** Normalizes legacy `labelId` and `labelIds` into one list. */
+export function getLabelFilterIds(f: LabelFilter): string[] {
+  if (f.labelIds && f.labelIds.length > 0) return f.labelIds;
+  return f.labelId ? [f.labelId] : [];
+}
+
+// FRONTEND-PROPOSED: pending backend review — "Scene" facet (detected moments, e.g. "Vow Exchange").
+// Scene ids correspond to `MediaDetail.tags[].id`.
+export const SceneFilterSchema = z.object({
+  kind: z.literal('scene'),
+  ids: z.array(z.string()),
+  match: MatchSchema,
+  source: SourceSchema,
+});
+export type SceneFilter = z.infer<typeof SceneFilterSchema>;
 
 export const PlaceFilterSchema = z.object({
   kind: z.literal('place'),
@@ -43,6 +68,7 @@ export type FolderFilter = z.infer<typeof FolderFilterSchema>;
 export const FilterSchema = z.discriminatedUnion('kind', [
   PersonFilterSchema,
   LabelFilterSchema,
+  SceneFilterSchema,
   PlaceFilterSchema,
   MediaKindFilterSchema,
   FolderFilterSchema,

@@ -9,10 +9,13 @@ import {
   MediaSummary,
   Person,
   PlaceSummary,
+  SceneSummary,
   SidebarCounts,
   SnapsortApi,
+  ShelfItem,
   Thread,
   ThreadDetail,
+  getLabelFilterIds,
 } from '@snapsort/contract';
 import {
   mockCounts,
@@ -94,8 +97,18 @@ export class MockSnapsortApi implements SnapsortApi {
             if (!hasAny) return false;
           }
         } else if (f.kind === 'label') {
-          const hasLabel = m.labels.some((l) => l.labelId === f.labelId);
-          if (!hasLabel) return false;
+          const ids = getLabelFilterIds(f);
+          if (ids.length > 0) {
+            const has = (id: string) => m.labels.some((l) => l.labelId === id);
+            const ok = (f.match ?? 'all') === 'all' ? ids.every(has) : ids.some(has);
+            if (!ok) return false;
+          }
+        } else if (f.kind === 'scene') {
+          if (f.ids.length > 0) {
+            const has = (id: string) => (m.tags ?? []).some((t) => t.id === id);
+            const ok = f.match === 'all' ? f.ids.every(has) : f.ids.some(has);
+            if (!ok) return false;
+          }
         } else if (f.kind === 'place') {
           if (m.place?.name !== f.name) return false;
         } else if (f.kind === 'mediaKind') {
@@ -259,6 +272,7 @@ export class MockSnapsortApi implements SnapsortApi {
       people: this.people.length,
       places: mockPlaces.length,
       objects: mockLabelManifest.modules[0].labels.length,
+      scenes: (await this.listScenes()).length,
     };
   }
 
@@ -268,6 +282,27 @@ export class MockSnapsortApi implements SnapsortApi {
 
   async listPlaces(): Promise<PlaceSummary[]> {
     return mockPlaces;
+  }
+
+  async listScenes(): Promise<SceneSummary[]> {
+    const byId = new Map<string, SceneSummary>();
+    for (const m of this.media) {
+      for (const t of m.tags ?? []) {
+        const existing = byId.get(t.id);
+        if (existing) {
+          existing.count++;
+        } else {
+          byId.set(t.id, {
+            id: t.id,
+            name: t.name,
+            count: 1,
+            coverMediaId: m.id,
+            coverTs: t.timestamps?.[0],
+          });
+        }
+      }
+    }
+    return [...byId.values()].sort((a, b) => b.count - a.count);
   }
 
   async listPeople(): Promise<Person[]> {
@@ -385,5 +420,71 @@ export class MockSnapsortApi implements SnapsortApi {
     const t = this.threads.find((th) => th.id === id);
     if (!t) throw new Error(`Thread ${id} not found`);
     return t;
+  }
+
+  // Shelf methods
+  private shelfItems: ShelfItem[] = [];
+  private shelfPinned = true;
+  private shelfListeners: Set<(items: ShelfItem[]) => void> = new Set();
+
+  async openShelfWindow(): Promise<void> {
+    // In mock/browser environment, simulated
+  }
+
+  async closeShelfWindow(): Promise<void> {
+    // In mock/browser environment, simulated
+  }
+
+  async toggleShelfPin(pinned?: boolean): Promise<boolean> {
+    this.shelfPinned = pinned !== undefined ? pinned : !this.shelfPinned;
+    return this.shelfPinned;
+  }
+
+  async isShelfPinned(): Promise<boolean> {
+    return this.shelfPinned;
+  }
+
+  async getShelfItems(): Promise<ShelfItem[]> {
+    return [...this.shelfItems];
+  }
+
+  async addToShelf(items: ShelfItem | ShelfItem[]): Promise<ShelfItem[]> {
+    const list = Array.isArray(items) ? items : [items];
+    for (const item of list) {
+      if (!this.shelfItems.some((existing) => existing.id === item.id)) {
+        this.shelfItems.push(item);
+      }
+    }
+    this.notifyShelfListeners();
+    return [...this.shelfItems];
+  }
+
+  async removeFromShelf(id: number): Promise<ShelfItem[]> {
+    this.shelfItems = this.shelfItems.filter((item) => item.id !== id);
+    this.notifyShelfListeners();
+    return [...this.shelfItems];
+  }
+
+  async clearShelf(): Promise<void> {
+    this.shelfItems = [];
+    this.notifyShelfListeners();
+  }
+
+  async startNativeDrag(_filePaths: string[]): Promise<void> {
+    // In browser/mock environment, simulated
+  }
+
+  onShelfSync(callback: (items: ShelfItem[]) => void): () => void {
+    this.shelfListeners.add(callback);
+    callback([...this.shelfItems]);
+    return () => {
+      this.shelfListeners.delete(callback);
+    };
+  }
+
+  private notifyShelfListeners(): void {
+    for (const listener of this.shelfListeners) {
+      listener([...this.shelfItems]);
+    }
   }
 }

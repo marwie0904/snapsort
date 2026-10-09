@@ -7,9 +7,15 @@ import { FilterBar } from './components/FilterBar';
 import { MediaGrid } from './components/MediaGrid';
 import { AskAiPanel } from './components/AskAiPanel';
 import { PeopleView } from './components/PeopleView';
+import { ScenesView } from './components/ScenesView';
+import { TagsView } from './components/TagsView';
 import { PersonDetailView } from './components/PersonDetailView';
 import { MediaDetailView } from './components/MediaDetailView';
+import { WelcomeModal } from './components/WelcomeModal';
+import { SpotlightTourOverlay } from './components/SpotlightTourOverlay';
+import { TutorialDrawer } from './components/TutorialDrawer';
 import { useUiStore } from './stores/useUiStore';
+import { useOnboardingStore } from './stores/useOnboardingStore';
 import { MockSnapsortApi } from '@snapsort/mock';
 
 // Fallback in-memory mock if not inside Electron contextBridge
@@ -28,6 +34,7 @@ export const App: React.FC = () => {
     getSearchQuery,
     view,
     aiPanelOpen,
+    sidebarOpen,
     currentView,
     selectedPersonId,
     selectedMediaId,
@@ -41,6 +48,26 @@ export const App: React.FC = () => {
     const cleanup = initThemeListener();
     return cleanup;
   }, [initThemeListener]);
+
+  // Global hotkey for Help & Tutorial (? or F1)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement;
+      if (!isInput && (e.key === '?' || e.key === 'F1')) {
+        e.preventDefault();
+        const store = useOnboardingStore.getState();
+        if (store.tutorialDrawerOpen) {
+          store.closeTutorialDrawer();
+        } else {
+          store.openTutorialDrawer('interact');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Fetch Sidebar Counts
   const { data: counts } = useQuery({
@@ -69,16 +96,24 @@ export const App: React.FC = () => {
       <Sidebar counts={counts} onAddFolder={handleAddFolder} />
 
       {/* 2. Center Content Area */}
-      <main className="flex-1 h-full flex flex-col min-w-0 overflow-hidden px-8 pt-6">
+      <main className={`flex-1 h-full flex flex-col min-w-0 overflow-hidden px-8 transition-all duration-300 ${sidebarOpen ? 'pt-6' : 'pt-7 pl-20'}`}>
         {/* Top Search & Filter Bar */}
         <div className="shrink-0 mb-2">
           <TopBar />
         </div>
 
-        {/* View Switcher: People View vs Person Detail vs Media Detail vs Media Library */}
+        {/* View Switcher: People View vs Scenes View vs Tags View vs Person Detail vs Media Detail vs Media Library */}
         {currentView === 'people' ? (
           <div className="flex-1 overflow-hidden flex flex-col pt-2">
             <PeopleView />
+          </div>
+        ) : currentView === 'scenes' ? (
+          <div className="flex-1 overflow-hidden flex flex-col pt-2">
+            <ScenesView />
+          </div>
+        ) : currentView === 'tags' ? (
+          <div className="flex-1 overflow-hidden flex flex-col pt-2">
+            <TagsView />
           </div>
         ) : currentView === 'person-detail' && selectedPersonId !== null ? (
           <div className="flex-1 overflow-hidden flex flex-col pt-2">
@@ -128,6 +163,11 @@ export const App: React.FC = () => {
           currentMatchedCount={queryResult?.matched ?? queryResult?.total ?? 36}
         />
       )}
+
+      {/* 4. Onboarding & Tutorial Overlays */}
+      <WelcomeModal />
+      <SpotlightTourOverlay />
+      <TutorialDrawer />
     </div>
   );
 };

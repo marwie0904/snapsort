@@ -12,9 +12,13 @@ import {
   Laptop,
   PanelLeftClose,
   Users,
+  Clapperboard,
+  Tag,
+  HelpCircle,
 } from 'lucide-react';
 import { Button, Wordmark, ThemeSegmentedControl } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
+import { useOnboardingStore } from '../stores/useOnboardingStore';
 import { mockLocalFolders, mockExternalDrive } from '@snapsort/mock';
 
 const EjectIcon: React.FC<{ size?: number; className?: string }> = ({ size = 12, className = '' }) => (
@@ -34,6 +38,53 @@ const EjectIcon: React.FC<{ size?: number; className?: string }> = ({ size = 12,
   </svg>
 );
 
+interface SidebarNavItemProps {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  label: string;
+  count: number;
+  active: boolean;
+  activeFilterCount?: number;
+  onClick: () => void;
+}
+
+const SidebarNavItem: React.FC<SidebarNavItemProps> = ({
+  icon: Icon,
+  label,
+  count,
+  active,
+  activeFilterCount = 0,
+  onClick,
+}) => {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+        active
+          ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
+          : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
+      }`}
+    >
+      <div className="flex items-center gap-2 truncate">
+        <Icon
+          size={14}
+          className={active ? 'text-[var(--accent)] shrink-0' : 'text-[var(--text-muted)] shrink-0'}
+        />
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+        {activeFilterCount > 0 && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" />
+            <span className="tabular-nums">{activeFilterCount}</span>
+          </span>
+        )}
+        <span className="tabular-nums text-[var(--text-muted)] font-normal">{count}</span>
+      </div>
+    </button>
+  );
+};
+
 interface SidebarProps {
   counts?: {
     all: number;
@@ -42,12 +93,13 @@ interface SidebarProps {
     people: number;
     places: number;
     objects: number;
+    scenes?: number;
   };
   onAddFolder?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  counts = { all: 248, images: 182, videos: 66, people: 6, places: 4, objects: 31 },
+  counts = { all: 248, images: 182, videos: 66, people: 6, places: 4, objects: 31, scenes: 7 },
   onAddFolder,
 }) => {
   const {
@@ -62,10 +114,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     clearSelectedFolder,
     currentView,
     navigateToPeople,
+    navigateToScenes,
+    navigateToTags,
     navigateToLibrary,
     themePreference,
+    effectiveTheme,
     setThemePreference,
+    getFacetSelection,
   } = useUiStore();
+
+  const { openTutorialDrawer } = useOnboardingStore();
 
   const [driveExpanded, setDriveExpanded] = useState(true);
   const [isDriveEjected, setIsDriveEjected] = useState(false);
@@ -98,22 +156,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
+      data-tour="sidebar"
       className={`h-full bg-[var(--surface-1)] border-r border-[var(--border)] flex flex-col justify-between select-none text-sm transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${
         sidebarOpen
-          ? 'w-64 min-w-64 p-5 opacity-100'
+          ? 'w-64 min-w-64 px-5 pb-5 pt-8 opacity-100'
           : 'w-0 min-w-0 p-0 border-r-0 opacity-0 pointer-events-none'
       }`}
     >
       {/* Top Section */}
       <div className="space-y-5 overflow-y-auto pr-1">
-        {/* Wordmark logo & Collapse button */}
-        <div className="pt-1 flex items-center justify-between">
-          <Wordmark size="md" />
+        {/* Wordmark logo & Collapse button (traffic-light safe & draggable) */}
+        <div
+          className="flex items-center justify-between"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <Wordmark size="md" theme={effectiveTheme} />
+          </div>
           <button
             type="button"
             onClick={toggleSidebar}
             title="Collapse sidebar"
-            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors"
+            aria-label="Collapse sidebar"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
           >
             <PanelLeftClose size={16} />
           </button>
@@ -152,90 +218,88 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* TAB 1: LIBRARY VIEW */}
         {activeTab === 'library' && (
-          <nav className="space-y-6 pt-1">
+          <nav className="space-y-5 pt-1">
+            {/* Section A: LIBRARY */}
             <div>
               <div className="text-[11px] font-bold tracking-wider text-[var(--text-muted)] uppercase mb-2">
                 Library
               </div>
               <div className="space-y-0.5">
-                <button
+                <SidebarNavItem
+                  icon={Film}
+                  label="All footage"
+                  count={counts.all}
+                  active={currentView === 'library' && scope === 'all' && !selectedFolderId}
                   onClick={() => {
                     clearSelectedFolder();
                     navigateToLibrary();
                     setScope('all');
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                    currentView === 'library' && scope === 'all' && !selectedFolderId
-                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Film size={14} className="text-[var(--text-muted)]" />
-                    <span>All footage</span>
-                  </div>
-                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.all}</span>
-                </button>
-                <button
+                />
+                <SidebarNavItem
+                  icon={Image}
+                  label="Photos"
+                  count={counts.images}
+                  active={currentView === 'library' && scope === 'images' && !selectedFolderId}
                   onClick={() => {
                     clearSelectedFolder();
                     navigateToLibrary();
                     setScope('images');
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                    currentView === 'library' && scope === 'images' && !selectedFolderId
-                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Image size={14} className="text-[var(--text-muted)]" />
-                    <span>Photos</span>
-                  </div>
-                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.images}</span>
-                </button>
-                <button
+                />
+                <SidebarNavItem
+                  icon={Film}
+                  label="Videos"
+                  count={counts.videos}
+                  active={currentView === 'library' && scope === 'videos' && !selectedFolderId}
                   onClick={() => {
                     clearSelectedFolder();
                     navigateToLibrary();
                     setScope('videos');
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                    currentView === 'library' && scope === 'videos' && !selectedFolderId
-                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Film size={14} className="text-[var(--text-muted)]" />
-                    <span>Videos</span>
-                  </div>
-                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.videos}</span>
-                </button>
-                <button
+                />
+              </div>
+            </div>
+
+            {/* Section B: EXPLORE */}
+            <div>
+              <div className="text-[11px] font-bold tracking-wider text-[var(--text-muted)] uppercase mb-2">
+                Explore
+              </div>
+              <div className="space-y-0.5">
+                <SidebarNavItem
+                  icon={Users}
+                  label="People"
+                  count={counts.people}
+                  active={(currentView === 'people' || currentView === 'person-detail') && !selectedFolderId}
+                  activeFilterCount={getFacetSelection('person').ids.length}
                   onClick={() => {
                     clearSelectedFolder();
                     navigateToPeople();
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                    (currentView === 'people' || currentView === 'person-detail') && !selectedFolderId
-                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Users
-                      size={14}
-                      className={
-                        (currentView === 'people' || currentView === 'person-detail') && !selectedFolderId
-                          ? 'text-[var(--accent)]'
-                          : 'text-[var(--text-muted)]'
-                      }
-                    />
-                    <span>People & Faces</span>
-                  </div>
-                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.people}</span>
-                </button>
+                />
+                <SidebarNavItem
+                  icon={Clapperboard}
+                  label="Scenes"
+                  count={counts.scenes ?? 7}
+                  active={currentView === 'scenes' && !selectedFolderId}
+                  activeFilterCount={getFacetSelection('scene').ids.length}
+                  onClick={() => {
+                    clearSelectedFolder();
+                    navigateToScenes();
+                  }}
+                />
+                <SidebarNavItem
+                  icon={Tag}
+                  label="Tags"
+                  count={counts.objects}
+                  active={currentView === 'tags' && !selectedFolderId}
+                  activeFilterCount={getFacetSelection('label').ids.length}
+                  onClick={() => {
+                    clearSelectedFolder();
+                    navigateToTags();
+                  }}
+                />
               </div>
             </div>
           </nav>
@@ -443,6 +507,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {!isDriveEjected ? '1 external drive mounted' : '0 external drives mounted'}
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => openTutorialDrawer('interact')}
+            className="flex items-center gap-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors cursor-pointer"
+            title="Help, Tutorial & Shortcuts"
+          >
+            <HelpCircle size={12} />
+            <span>Help</span>
+          </button>
         </div>
       </div>
     </aside>

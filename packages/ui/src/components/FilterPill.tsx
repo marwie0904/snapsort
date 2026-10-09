@@ -22,6 +22,12 @@ export const FilterPill: React.FC<FilterPillProps> = ({
   return (
     <div
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick?.(e as unknown as React.MouseEvent<HTMLDivElement>);
+        }
+      }}
       role="button"
       tabIndex={0}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors select-none ${

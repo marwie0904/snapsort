@@ -36,18 +36,32 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
   return (
     <div className="relative w-full aspect-[16/10] max-h-[56vh] bg-[var(--surface-2)] rounded-2xl overflow-hidden border border-[var(--border)] select-none flex items-center justify-center group shadow-xl transition-colors">
       {/* Background Graphic / Simulated Viewport */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#F8F9FA] via-[#F1F3F5] to-[#E9ECEF] dark:from-[#1A1A1A] dark:via-[#141414] dark:to-[#0D0D0D] flex flex-col items-center justify-center p-6 text-center">
+      <div className="absolute inset-0 bg-[var(--surface-0)] flex flex-col items-center justify-center p-6 text-center">
         {/* Subtle grid pattern background */}
         <div
-          className="absolute inset-0 opacity-[0.12] dark:opacity-[0.04] pointer-events-none"
+          className="absolute inset-0 opacity-[0.06] pointer-events-none"
           style={{
             backgroundImage: `radial-gradient(var(--text-muted) 1px, transparent 1px)`,
             backgroundSize: '24px 24px',
           }}
         />
 
-        {/* Central Graphic Placeholder */}
-        <div className="relative z-0 flex flex-col items-center">
+        {/* Real media preview render with fallback */}
+        <img
+          src={
+            isVideo
+              ? `snapsort-media://frame/${media.id}/${currentTimestamp}`
+              : `snapsort-media://preview/${media.id}`
+          }
+          alt={media.name}
+          className="absolute inset-0 w-full h-full object-contain z-0"
+          onError={(e) => {
+            (e.currentTarget as HTMLElement).style.display = 'none';
+          }}
+        />
+
+        {/* Central Graphic Placeholder (Behind image or if image load fails) */}
+        <div className="relative z-0 flex flex-col items-center opacity-60">
           <div className="w-20 h-20 rounded-2xl bg-[var(--surface-1)] border border-[var(--border)] flex items-center justify-center shadow-md mb-3">
             {isVideo ? (
               <Film size={32} className="text-[var(--text-muted)]" />
@@ -69,6 +83,7 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
         <button
           type="button"
           onClick={onTogglePlay}
+          aria-label={isPlaying ? 'Pause video' : 'Play video'}
           className="absolute z-20 w-16 h-16 rounded-full bg-[var(--surface-1)]/85 hover:bg-[var(--surface-1)] border border-[var(--border)] hover:border-[var(--accent)] text-[var(--text)] hover:text-[var(--accent)] flex items-center justify-center transition-all duration-200 shadow-2xl backdrop-blur-md cursor-pointer hover:scale-105 active:scale-95"
           title={isPlaying ? 'Pause' : 'Play'}
         >
@@ -76,10 +91,10 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
         </button>
       )}
 
-      {/* Interactive Detection Bounding Box Overlays */}
+      {/* Interactive Detection Bounding Box Overlays (Electric Cyan #5AC8FA) */}
       {showDetections && detections && (
         <div className="absolute inset-0 z-10 pointer-events-none">
-          {/* 1. Face Bounding Boxes (Theme-calibrated Sky/Cyan) */}
+          {/* 1. Face Bounding Boxes (Electric Cyan #5AC8FA) */}
           {detections.faces.map((face, index) => {
             const entityId = `person-${face.personId ?? index}`;
             const isHovered = hoveredEntityId === entityId;
@@ -96,22 +111,22 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
                   width: `${w * 100}%`,
                   height: `${h * 100}%`,
                 }}
-                className={`absolute pointer-events-auto rounded-lg border-2 transition-all duration-150 cursor-pointer ${
+                className={`absolute pointer-events-auto rounded-sm border-[1.5px] border-[#5AC8FA] transition-all duration-150 cursor-pointer ${
                   isHovered
-                    ? 'border-sky-600 dark:border-[#38BDF8] bg-sky-500/25 dark:bg-[#38BDF8]/20 ring-4 ring-sky-500/40 dark:ring-[#38BDF8]/40 shadow-[0_0_20px_rgba(2,132,199,0.4)] dark:shadow-[0_0_20px_rgba(56,189,248,0.5)] z-30 scale-[1.02]'
-                    : 'border-sky-600/90 dark:border-[#38BDF8]/80 bg-sky-500/15 dark:bg-[#38BDF8]/10 hover:border-sky-600 dark:hover:border-[#38BDF8] hover:bg-sky-500/25 dark:hover:bg-[#38BDF8]/15'
+                    ? 'bg-[#5AC8FA]/25 ring-2 ring-[#5AC8FA]/50 shadow-[0_0_16px_rgba(90,200,250,0.4)] z-30 scale-[1.01]'
+                    : 'bg-[#5AC8FA]/10 hover:bg-[#5AC8FA]/20'
                 }`}
               >
                 {/* Person Tag Chip */}
-                <div className="absolute -top-6 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/95 dark:bg-[#0A1A28]/95 border border-sky-300 dark:border-[#38BDF8]/50 text-sky-800 dark:text-[#38BDF8] text-[10px] font-semibold whitespace-nowrap shadow-md backdrop-blur-md">
-                  <User size={10} className="shrink-0" />
+                <div className="absolute -top-5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[#5AC8FA] text-[#0F0F0F] text-[10px] font-bold whitespace-nowrap shadow-sm">
+                  <User size={10} className="shrink-0 stroke-[2.5]" />
                   <span>{face.name || `Person ${face.personId || index + 1}`}</span>
                 </div>
               </div>
             );
           })}
 
-          {/* 2. Object Bounding Boxes (Theme-calibrated Amber) */}
+          {/* 2. Object Bounding Boxes (Electric Cyan #5AC8FA) */}
           {detections.objects.map((obj, index) => {
             const entityId = `object-${obj.labelId}-${index}`;
             const isHovered = hoveredEntityId === entityId;
@@ -128,17 +143,17 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
                   width: `${w * 100}%`,
                   height: `${h * 100}%`,
                 }}
-                className={`absolute pointer-events-auto rounded-lg border-2 transition-all duration-150 cursor-pointer ${
+                className={`absolute pointer-events-auto rounded-sm border-[1.5px] border-[#5AC8FA] transition-all duration-150 cursor-pointer ${
                   isHovered
-                    ? 'border-amber-600 dark:border-[#FFC400] bg-amber-500/25 dark:bg-[#FFC400]/20 ring-4 ring-amber-500/40 dark:ring-[#FFC400]/40 shadow-[0_0_20px_rgba(217,119,6,0.4)] dark:shadow-[0_0_20px_rgba(255,196,0,0.5)] z-30 scale-[1.02]'
-                    : 'border-amber-600/90 dark:border-[#FFC400]/80 bg-amber-500/15 dark:bg-[#FFC400]/10 hover:border-amber-600 dark:hover:border-[#FFC400] hover:bg-amber-500/25 dark:hover:bg-[#FFC400]/15'
+                    ? 'bg-[#5AC8FA]/25 ring-2 ring-[#5AC8FA]/50 shadow-[0_0_16px_rgba(90,200,250,0.4)] z-30 scale-[1.01]'
+                    : 'bg-[#5AC8FA]/10 hover:bg-[#5AC8FA]/20'
                 }`}
               >
                 {/* Object Tag Chip */}
-                <div className="absolute -top-6 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/95 dark:bg-[#2A2004]/95 border border-amber-300 dark:border-[#FFC400]/50 text-amber-900 dark:text-[#FFC400] text-[10px] font-semibold whitespace-nowrap shadow-md backdrop-blur-md">
-                  <Box size={10} className="shrink-0" />
+                <div className="absolute -top-5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[#5AC8FA] text-[#0F0F0F] text-[10px] font-bold whitespace-nowrap shadow-sm">
+                  <Box size={10} className="shrink-0 stroke-[2.5]" />
                   <span>{obj.name || obj.labelId}</span>
-                  <span className="text-[9px] opacity-75 font-mono">
+                  <span className="text-[9px] opacity-85 font-mono">
                     {Math.round(obj.score * 100)}%
                   </span>
                 </div>

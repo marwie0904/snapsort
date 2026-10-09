@@ -108,7 +108,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
       <div className="p-6 rounded-2xl bg-[var(--surface-1)] border border-[var(--border)] mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-xs">
         <div className="flex items-center gap-5">
           {/* Circular Face Avatar */}
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-600/30 to-yellow-500/20 border-2 border-[var(--accent)] flex items-center justify-center text-[var(--accent)] shadow-md shrink-0 overflow-hidden">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[var(--surface-3)] to-[var(--surface-2)] border-2 border-[var(--accent)] flex items-center justify-center text-[var(--accent)] shadow-md shrink-0 overflow-hidden">
             <span className="text-2xl font-bold tracking-tight">
               {displayName !== 'Unnamed Face' ? (
                 displayName.slice(0, 2).toUpperCase()

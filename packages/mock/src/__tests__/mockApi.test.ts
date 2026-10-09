@@ -75,5 +75,55 @@ describe('MockSnapsortApi', () => {
     expect(detections5s.objects.length).toBeGreaterThan(0);
     expect(detections5s.objects[0].name).toBeDefined();
   });
+
+  const matchedFor = async (f: import('@snapsort/contract').Filter[]) =>
+    (
+      await api.query({
+        search: { scope: 'all', f, sort: 'newest', view: 'filter' },
+        limit: 1,
+      })
+    ).matched;
+
+  it('lists scenes aggregated from media tags, sorted by count', async () => {
+    const scenes = await api.listScenes();
+    expect(scenes.length).toBeGreaterThan(0);
+    expect(scenes.some((s) => s.id === 'vows' && s.name === 'Vow Exchange')).toBe(true);
+    for (let i = 1; i < scenes.length; i++) {
+      expect(scenes[i - 1].count).toBeGreaterThanOrEqual(scenes[i].count);
+    }
+    const counts = await api.getCounts();
+    expect(counts.scenes).toBe(scenes.length);
+  });
+
+  it('filters by scene with any/all semantics', async () => {
+    const scenes = await api.listScenes();
+    const a = scenes[0];
+    const b = scenes[1];
+    const onlyA = await matchedFor([{ kind: 'scene', ids: [a.id], match: 'any', source: 'user' }]);
+    expect(onlyA).toBe(a.count);
+    const anyAB = await matchedFor([{ kind: 'scene', ids: [a.id, b.id], match: 'any', source: 'user' }]);
+    const allAB = await matchedFor([{ kind: 'scene', ids: [a.id, b.id], match: 'all', source: 'user' }]);
+    expect(anyAB).toBeGreaterThanOrEqual(onlyA);
+    expect(allAB).toBeLessThanOrEqual(onlyA);
+  });
+
+  it('filters by multiple tags (labelIds) with any/all, and keeps legacy labelId working', async () => {
+    const legacy = await matchedFor([{ kind: 'label', module: 'objects', labelId: 'dress', source: 'user' }]);
+    const single = await matchedFor([
+      { kind: 'label', module: 'objects', labelIds: ['dress'], match: 'all', source: 'user' },
+    ]);
+    expect(single).toBe(legacy);
+    expect(single).toBeGreaterThan(0);
+
+    const any = await matchedFor([
+      { kind: 'label', module: 'objects', labelIds: ['dress', 'cake'], match: 'any', source: 'user' },
+    ]);
+    const all = await matchedFor([
+      { kind: 'label', module: 'objects', labelIds: ['dress', 'suit'], match: 'all', source: 'user' },
+    ]);
+    expect(any).toBeGreaterThan(single);
+    expect(all).toBeLessThanOrEqual(single);
+    expect(all).toBeGreaterThan(0); // reference video CER_0412 has both dress + suit
+  });
 });
 
