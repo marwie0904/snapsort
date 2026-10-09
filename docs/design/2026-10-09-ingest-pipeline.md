@@ -1,7 +1,7 @@
 # Ingest pipeline design
 
 Date: 2026-10-09
-Status: draft, pending review
+Status: approved. Plan: `docs/plans/2026-10-09-ingest-pipeline.md`
 
 ## Goal
 
@@ -42,8 +42,13 @@ snapsort/
     example.py              # template module
 tests/
   conftest.py               # shared fixtures: tmp data dir, generated PNG + 3 s video, sample Frames
+  pipeline/                 # pipeline unit tests
+    test_validate.py
+    test_inputs.py          # path resolution, image loading, frame extraction, schema
+    test_discovery.py
   e2e/
-    test_ingest.py          # whole pipeline: run_ingest with test-only modules, plus one CLI run
+    test_ingest.py          # whole pipeline: run_ingest with test-only modules
+    test_cli.py             # the installed snapsort command, run as a subprocess
   modules/
     test_example.py         # one file per module: test_<name>.py
 .snapsort/                  # runtime data, git-ignored, created in the current working directory
@@ -80,7 +85,7 @@ snapsort ingest <path>... [--modules a,b]
 ## Frame extraction
 
 - Image: one frame, `idx = 0`, `ts = NULL`, `frames.path` = the original file. Nothing is copied.
-- Video: `ffmpeg -v error -i <path> -vf fps=1 -q:v 2 .snapsort/frames/<media_id>/%06d.jpg`. ffmpeg's `%06d` starts at 1, so file `n` maps to `idx = n - 1` and `ts = idx` (seconds). Files are renamed to `<idx:06d>.jpg` after extraction. ffmpeg applies rotation metadata by default. Verified: a 3 s clip yields exactly 3 frames.
+- Video: `ffmpeg -v error -i <path> -vf fps=1 -q:v 2 -start_number 0 .snapsort/frames/<media_id>/%06d.jpg`. With `-start_number 0`, file number = `idx`, and `ts = idx` (seconds). Any existing frame dir for that media id is removed first. ffmpeg applies rotation metadata by default. Verified: a 3 s clip yields exactly 3 frames.
 - The `media` row, extraction and `frames` rows happen in one transaction. If ffmpeg fails or yields 0 frames: roll back, delete the frame dir, skip the file with a warning.
 - Frames are kept on disk so new modules can run without re-decoding and search can display results.
 
@@ -152,7 +157,8 @@ The runner checks every `Result` before storing it with `validate(results, frame
 
 - Import every module file in `snapsort/modules/` via `pkgutil.iter_modules`, skipping names that start with `_`.
 - Collect each `Module` subclass defined in that file and instantiate it with no arguments.
-- Duplicate or invalid `name` → exit with an error at startup.
+- A file that fails to import (for example, a missing dependency) is skipped with a warning, so one broken module doesn't block the rest.
+- Duplicate or invalid `name` → exit code 2 at startup.
 - Add a module: add a file. Disable: rename to `_<name>.py`. Remove: delete the file.
 - `--modules a,b` limits the run to those names. An unknown name → exit code 2, listing the available names.
 
@@ -245,9 +251,9 @@ The main thread does all DB writes. Per file and module, in one transaction:
 
 ### Output
 
-- One line per file: `<path>  <n> frames  example:done objects:error(<message>)`.
+- One line per file: `<path>  <n> frames  example:done objects:error(<message>)`, or `<path>  up to date` when no module is pending.
 - Skipped files: `skip <path> (<reason>)`.
-- Exit code 0 if everything succeeded, 1 if any file was skipped or any module errored.
+- Exit code 0 if everything succeeded, 1 if any file was skipped or any module errored, 2 for configuration errors (invalid or duplicate module names, unknown `--modules` name, no modules).
 
 ## CLI
 
@@ -283,9 +289,13 @@ Fixtures are generated into a temp dir at test time, so no binary files are comm
 
 At minimum, each one calls `setup()`, runs `process(sample_frames)`, and passes the output through `validate` without an error. Module-specific checks are added on top.
 
-### E2E suite (`tests/e2e/test_ingest.py`)
+### Pipeline unit tests (`tests/pipeline/`)
 
-This suite tests the pipeline, not real modules. It calls `run_ingest` with test-only modules defined in the file. Checks:
+These cover `validate`, input resolution, image loading, frame extraction, the schema and discovery.
+
+### E2E suite (`tests/e2e/`)
+
+This suite tests the pipeline, not real modules. `test_ingest.py` calls `run_ingest` with test-only modules defined in the file, and `test_cli.py` runs the installed command. Checks:
 
 1. The video produces 3 frames with `ts` 0, 1, 2. The image produces 1 frame with `ts` NULL.
 2. Results and `done` runs rows exist for each module.
