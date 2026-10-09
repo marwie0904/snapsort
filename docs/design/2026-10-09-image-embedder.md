@@ -49,13 +49,15 @@ The model's default preprocessing resizes the short side to 256 and center-crops
 ### Use from search
 
 ```python
+from snapsort.ingest import load_image
+
 m = ImageEmbed()
 m.setup()
-q = m.embed([query_image])[0]
+q = m.embed([load_image(query_path)])[0]
 # rank stored image_embed vectors by dot product with q (vectors are unit length, so dot = cosine)
 ```
 
-Search goes through the same `embed()` method, so query and stored vectors always share preprocessing.
+Search goes through the same `load_image()` and `embed()` as ingest, so query and stored vectors share decoding and preprocessing. Opening the query with plain `Image.open` skips EXIF rotation (and cannot read HEIC): a rotated phone photo then scores about 0.86 against its own stored vector instead of 1.0.
 
 ## Errors
 
@@ -74,7 +76,7 @@ No module-specific handling. The pipeline runner already covers it:
 
 Before implementation, rebase this branch onto `ingest-pipeline`, which already has `contract.py`, `validate()`, `load_image()` and the shared test fixtures. After the pipeline merges to `main`, rebase onto `main`. Only `pyproject.toml` and `uv.lock` can conflict. Resolve them by re-running `uv add torch transformers`.
 
-This branch does not create `snapsort/modules/__init__.py`, because the pipeline owns discovery there. Until it exists, `snapsort/modules/` imports as a namespace package.
+This branch does not create or edit `snapsort/modules/__init__.py`, because the pipeline owns discovery there.
 
 ## Testing (`tests/modules/test_image_embed.py`)
 

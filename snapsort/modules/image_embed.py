@@ -22,7 +22,10 @@ class ImageEmbed(Module):
         self.model = AutoModel.from_pretrained(MODEL).to(self.device).eval()
 
     def embed(self, images: list[Image.Image]) -> np.ndarray:
-        """N x 768 float32 with unit-length rows. Search embeds query images through this too."""
+        """N x 768 float32 with unit-length rows. Search embeds query images through this too.
+
+        Decode query images with snapsort.ingest.load_image, like stored frames. A plain
+        Image.open skips EXIF rotation, so a rotated phone photo misses its own stored vector."""
         inputs = self.processor(images=images, return_tensors="pt").to(self.device)
         with torch.inference_mode():
             out = self.model(**inputs).pooler_output
