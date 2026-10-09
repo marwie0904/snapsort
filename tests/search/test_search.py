@@ -1,10 +1,12 @@
 """Search tests. Rows go straight into a temp database, so no model runs."""
 import itertools
+import json
 import re
 
 import numpy as np
 import pytest
 
+import snapsort.cli as cli
 from snapsort.ingest import connect
 from snapsort.search import QueryError, Segment, open_db, search, segments
 
@@ -279,3 +281,107 @@ def test_similar_errors(db, tmp_path):
     for similar, message in cases:
         with pytest.raises(QueryError, match=re.escape(message)):
             search(db, [], similar)
+
+
+@pytest.fixture
+def run(tmp_path, monkeypatch, capsys):
+    """cli.main run in tmp_path, whose .snapsort is the db fixture's. Returns (exit code, stdout, stderr)."""
+    monkeypatch.chdir(tmp_path)
+
+    def go(*argv):
+        code = cli.main(list(argv))
+        out = capsys.readouterr()
+        return code, out.out, out.err
+
+    return go
+
+
+def test_cli_search_prints_segments_and_count(db, run):
+    _, f = media(db, "video", frames=11, name="clip.mov")
+    media(db, "image", name="other.jpg")
+    anna = person(db, [f[i] for i in (1, 2, 3, 5, 6, 10)])
+    assert run("search", "--person", str(anna)) == (0, "/lib/clip.mov  video  0:01–0:06, 0:10\n1 of 2 files\n", "")
+
+
+def test_cli_search_shows_scores_with_similar(db, run, q):
+    query, [fq] = media(db, "image", name="q.jpg")
+    embed(db, fq, q)
+    assert run("search", "--similar-media", f"{query}@0", "--min-score", "0.5") == \
+        (0, "/lib/q.jpg  image  1.00\n1 of 1 files\n", "")
+
+
+def test_cli_search_json(db, run, q):
+    query, [fq] = media(db, "image", name="q.jpg")
+    embed(db, fq, q)
+    code, out, _ = run("search", "--similar-media", str(query), "--json")
+    assert code == 0
+    assert json.loads(out) == [{"id": query, "kind": "image", "path": "/lib/q.jpg", "name": "q.jpg",
+                                "addedAt": "2026-10-09 10:00:00", "score": pytest.approx(1.0, abs=1e-5),
+                                "matches": [], "segments": [], "bestFrameTs": None}]
+
+
+def test_cli_json_video_fields(db, run):
+    _, f = media(db, "video", frames=3, name="v.mov")
+    anna = person(db, [f[0], f[1]])
+    code, out, _ = run("search", "--person", str(anna), "--json")
+    [item] = json.loads(out)
+    assert item["matches"] == [{"ts": 0.0, "score": None}, {"ts": 1.0, "score": None}]
+    assert item["segments"] == [{"start": 0.0, "end": 1.0, "score": None}] and item["bestFrameTs"] == 0.0
+
+
+def test_cli_no_matches_exits_0(db, run):
+    media(db, "image")
+    assert run("search", "--kind", "video") == (0, "0 of 1 files\n", "")
+    assert run("search", "--kind", "video", "--json") == (0, "[]\n", "")
+
+
+def test_cli_query_error_exits_2(db, run):
+    code, out, err = run("search", "--person", "7")
+    assert (code, out) == (2, "")
+    assert "error: unknown person id(s): 7. see snapsort people" in err
+
+
+def test_cli_bad_arguments_exit_2(db, run, capsys):
+    cases = [
+        (["search", "--person", "anna"], "expected comma-separated person ids, got 'anna'. see snapsort people"),
+        (["search", "--similar-media", "x@1"], "expected ID or ID@SECONDS, got 'x@1'"),
+        (["search", "--similar", "a.jpg", "--similar-media", "1"], "not allowed with argument"),
+    ]
+    for argv, message in cases:
+        with pytest.raises(SystemExit) as e:
+            run(*argv)
+        assert e.value.code == 2
+        assert message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("cmd", ["search", "people", "places"])
+def test_cli_without_database_exits_2(tmp_path, run, cmd):
+    code, _, err = run(cmd)
+    assert code == 2 and "no database" in err
+    assert not (tmp_path / ".snapsort").exists()
+
+
+def test_cli_people_and_places(db, run):
+    _, f = media(db, "video", frames=3)
+    _, g = media(db, "image")
+    anna = person(db, [f[0], f[1]])
+    add_faces(db, anna, g)
+    ben = person(db, [f[2]])
+    with db:
+        db.execute("UPDATE persons SET name = 'Ben' WHERE id = ?", (ben,))
+    place(db, f[0], "tokyo, japan")
+    place(db, g[0], "tokyo, japan")
+    _, h = media(db, "image")
+    place(db, h[0], "kyoto, japan")
+    _, k = media(db, "image")
+    place(db, k[0], None)  # GPS without a place name
+    assert run("people") == (0, f"{anna}\t\t3\t2\n{ben}\tBen\t1\t1\n", "")
+    assert run("places") == (0, "tokyo, japan\t2\nkyoto, japan\t1\n", "")
+
+
+def test_clock_format():
+    assert cli._clock(5.0) == "0:05"
+    assert cli._clock(65.0) == "1:05"
+    assert cli._clock(3725.0) == "1:02:05"
+    assert cli._span(Segment(10.0, 10.0, None)) == "0:10"
+    assert cli._span(Segment(1.0, 6.0, None)) == "0:01–0:06"

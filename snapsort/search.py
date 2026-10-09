@@ -214,3 +214,18 @@ def _rank(hits: list[Hit], sort: str, limit: int | None) -> list[Hit]:
     else:
         hits.sort(key=lambda h: Path(h.path).name.lower())
     return hits[:limit]
+
+
+def list_people(conn) -> list[tuple[int, str | None, int, int]]:
+    """(id, name, faces, files) per person with at least one face, most files first."""
+    return conn.execute(
+        "SELECT p.id, p.name, count(*), count(DISTINCT f.media_id) FROM persons p "
+        "JOIN person_faces pf ON pf.person_id = p.id JOIN results r ON r.id = pf.result_id "
+        "JOIN frames f ON f.id = r.frame_id GROUP BY p.id ORDER BY 4 DESC, p.id").fetchall()
+
+
+def list_places(conn) -> list[tuple[str, int]]:
+    """(place, files) per place name, most files first. Location results without a place name are skipped."""
+    return conn.execute(
+        "SELECT r.label, count(DISTINCT f.media_id) FROM results r JOIN frames f ON f.id = r.frame_id "
+        "WHERE r.module = 'location' AND r.label IS NOT NULL GROUP BY r.label ORDER BY 2 DESC, 1").fetchall()

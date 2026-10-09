@@ -1,14 +1,18 @@
 """snapsort command line."""
 import argparse
 import inspect
+import json
 import sys
 from pathlib import Path
 
 from snapsort.group import run_grouping
 from snapsort.ingest import run_ingest
 from snapsort.modules import discover
+from snapsort.search import (GAP, MIN_SCORE, SORTS, Hit, QueryError, Segment, list_people, list_places,
+                             open_db, search)
 
 DATA_DIR = Path(".snapsort")
+READS = ("group", "search", "people", "places")  # commands that need an existing database
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,13 +23,30 @@ def main(argv: list[str] | None = None) -> int:
     ingest.add_argument("--modules", help="comma-separated module names (default: all)")
     sub.add_parser("modules", help="list discovered modules")
     sub.add_parser("group", help="group face results into persons")
+    s = sub.add_parser("search", help="find media matching every given filter")
+    s.add_argument("--person", type=_ids, help="comma-separated person ids, all in the same frame (see `snapsort people`)")
+    s.add_argument("--any", action="store_true", help="match any --person id instead of all")
+    s.add_argument("--place", help="place name (see `snapsort places`)")
+    s.add_argument("--kind", choices=("image", "video"))
+    similar = s.add_mutually_exclusive_group()
+    similar.add_argument("--similar", type=Path, metavar="PATH", help="image to compare frames against")
+    similar.add_argument("--similar-media", type=_media_ref, metavar="ID[@TS]",
+                         help="stored file, and second for a video, to compare frames against")
+    s.add_argument("--min-score", type=float, default=MIN_SCORE, help=f"similarity cutoff (default {MIN_SCORE})")
+    s.add_argument("--sort", choices=SORTS)
+    s.add_argument("--limit", type=int)
+    s.add_argument("--gap", type=float, default=GAP,
+                   help=f"seconds between matches that still merge into one segment (default {GAP:g})")
+    s.add_argument("--json", action="store_true")
+    sub.add_parser("people", help="list persons: id, name, faces, files")
+    sub.add_parser("places", help="list place names: place, files")
     args = parser.parse_args(argv)
 
-    if args.cmd == "group":
+    if args.cmd in READS:
         if not (DATA_DIR / "snapsort.db").is_file():
             print(f"error: no database at {DATA_DIR / 'snapsort.db'}", file=sys.stderr)
             return 2
-        return 0 if _group() else 1
+        return (0 if _group() else 1) if args.cmd == "group" else _read(args)
     try:
         modules = discover()
     except ValueError as e:
@@ -62,3 +83,81 @@ def _group() -> bool:
         return False
     print(f"grouping  {s.faces} faces  {s.new_persons} new persons  {s.joined} joined existing")
     return True
+
+
+def _read(args) -> int:
+    """search, people and places. 2 on a QueryError."""
+    conn = open_db(DATA_DIR)
+    try:
+        if args.cmd == "people":
+            for pid, name, faces, files in list_people(conn):
+                print(f"{pid}\t{name or ''}\t{faces}\t{files}")
+            return 0
+        if args.cmd == "places":
+            for name, files in list_places(conn):
+                print(f"{name}\t{files}")
+            return 0
+        filters = []
+        if args.person is not None:
+            filters.append({"kind": "person", "ids": args.person, "match": "any" if args.any else "all"})
+        if args.place is not None:
+            filters.append({"kind": "place", "name": args.place})
+        if args.kind:
+            filters.append({"kind": "mediaKind", "value": args.kind})
+        similar = {"path": str(args.similar)} if args.similar else args.similar_media
+        try:
+            hits = search(conn, filters, similar, min_score=args.min_score, sort=args.sort,
+                          limit=args.limit, gap=args.gap)
+        except QueryError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        total = conn.execute("SELECT count(*) FROM media").fetchone()[0]
+    finally:
+        conn.close()
+    if args.json:
+        print(json.dumps([_json(h) for h in hits], ensure_ascii=False))
+        return 0
+    for h in hits:
+        cols = [h.path, h.kind]
+        if similar:
+            cols.append(f"{h.score:.2f}")
+        if h.segments:
+            cols.append(", ".join(_span(g) for g in h.segments))
+        print("  ".join(cols))
+    print(f"{len(hits)} of {total} files")
+    return 0
+
+
+def _ids(s: str) -> list[int]:
+    try:
+        return [int(x) for x in s.split(",") if x.strip()]
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected comma-separated person ids, got {s!r}. see snapsort people") from None
+
+
+def _media_ref(s: str) -> dict:
+    mid, sep, ts = s.partition("@")
+    try:
+        return {"mediaId": int(mid), "ts": float(ts)} if sep else {"mediaId": int(mid)}
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected ID or ID@SECONDS, got {s!r}") from None
+
+
+def _clock(t: float) -> str:
+    """Seconds as m:ss, or h:mm:ss from one hour on."""
+    t = int(t)
+    h, m, s = t // 3600, t // 60 % 60, t % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _span(seg: Segment) -> str:
+    return _clock(seg.start) if seg.start == seg.end else f"{_clock(seg.start)}–{_clock(seg.end)}"
+
+
+def _json(h: Hit) -> dict:
+    """A Hit with the frontend contract's field names where they overlap."""
+    return {"id": h.media_id, "kind": h.kind, "path": h.path, "name": Path(h.path).name, "addedAt": h.added_at,
+            "score": h.score, "matches": [{"ts": t, "score": s} for t, s in h.matches],
+            "segments": [{"start": g.start, "end": g.end, "score": g.score} for g in h.segments],
+            "bestFrameTs": h.best_ts}
