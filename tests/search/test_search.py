@@ -1,13 +1,16 @@
 """Image search over stored image_embed vectors."""
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from snapsort.cli import format_match
 from snapsort.ingest import run_ingest
 from snapsort.modules.example import Example
 from snapsort.modules.image_embed import ImageEmbed
-from snapsort.search import SearchError, search
+from snapsort.search import Match, SearchError, search
 
 
 @pytest.fixture
@@ -85,3 +88,37 @@ def test_video_query_is_an_error(tmp_path, sample_video):
 def test_missing_query_file_is_an_error(tmp_path):
     with pytest.raises(SearchError, match="cannot read"):
         search(tmp_path / "nope.jpg", tmp_path / ".snapsort")
+
+
+SNAPSORT = str(Path(sys.executable).parent / "snapsort")
+
+
+def run(*args, cwd):
+    return subprocess.run([SNAPSORT, *args], cwd=cwd, capture_output=True, text=True)
+
+
+def test_cli_prints_matches(library, sample_image, sample_video):
+    query = str(sample_image.relative_to(library.parent))   # relative, as typed in a shell
+    proc = run("search", query, "--min-score", "-1", cwd=library.parent)
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert lines[0].endswith(f"  {sample_image.resolve()}")
+    assert any(f"  {sample_video.resolve()} @ 0:0" in line for line in lines)
+
+
+def test_cli_no_matches(library, sample_image):
+    proc = run("search", str(sample_image), "--min-score", "1.01", cwd=library.parent)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "no matches at or above 1.01"
+
+
+def test_cli_without_library_exits_2(tmp_path, sample_image):
+    proc = run("search", str(sample_image), cwd=tmp_path)
+    assert proc.returncode == 2
+    assert "snapsort ingest" in proc.stderr
+
+
+def test_format_match():
+    assert format_match(Match("/p/a.jpg", "image", 0.9021, None)) == "0.902  /p/a.jpg"
+    assert format_match(Match("/p/c.mov", "video", 0.87, 65.0)) == "0.870  /p/c.mov @ 1:05"
+    assert format_match(Match("/p/c.mov", "video", 0.87, 3725.0)) == "0.870  /p/c.mov @ 62:05"

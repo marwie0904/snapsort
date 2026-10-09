@@ -10,6 +10,12 @@ from snapsort.modules import discover
 DATA_DIR = Path(".snapsort")
 
 
+def format_match(m) -> str:
+    """One output line for a search Match: score, path, and m:ss of the best frame for videos."""
+    at = "" if m.ts is None else f" @ {int(m.ts) // 60}:{int(m.ts) % 60:02d}"
+    return f"{m.score:.3f}  {m.path}{at}"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="snapsort")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -17,7 +23,25 @@ def main(argv: list[str] | None = None) -> int:
     ingest.add_argument("paths", nargs="+", type=Path)
     ingest.add_argument("--modules", help="comma-separated module names (default: all)")
     sub.add_parser("modules", help="list discovered modules")
+    search_cmd = sub.add_parser("search", help="find media that look like an image")
+    search_cmd.add_argument("query", type=Path)
+    search_cmd.add_argument("--limit", type=int, default=20)
+    search_cmd.add_argument("--min-score", type=float, default=0.5)
     args = parser.parse_args(argv)
+
+    if args.cmd == "search":
+        # Imported here so a disabled or broken image_embed module can't break `ingest`.
+        from snapsort.search import SearchError, search
+        try:
+            matches = search(args.query, DATA_DIR, args.limit, args.min_score)
+        except SearchError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        if not matches:
+            print(f"no matches at or above {args.min_score:.2f}")
+        for m in matches:
+            print(format_match(m))
+        return 0
 
     try:
         modules = discover()
