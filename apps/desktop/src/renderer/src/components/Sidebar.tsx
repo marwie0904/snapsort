@@ -10,28 +10,13 @@ import {
   Box,
   MapPin,
   HelpCircle,
+  Sun,
+  Moon,
 } from 'lucide-react';
-import { Wordmark, ThemeSegmentedControl } from '@snapsort/ui';
+import { Wordmark } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import { LibraryFolders } from './LibraryFolders';
-
-const EjectIcon: React.FC<{ size?: number; className?: string }> = ({ size = 12, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-  >
-    <polygon points="12 3 4 15 20 15 12 3" />
-    <rect x="4" y="19" width="16" height="2" rx="1" />
-  </svg>
-);
 
 interface SidebarNavItemProps {
   icon: React.ComponentType<{ size?: number; className?: string }>;
@@ -124,10 +109,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       data-tour="sidebar"
-      className={`h-full bg-[var(--surface-1)] border-r border-[var(--border)] flex flex-col justify-between select-none text-sm transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${
+      className={`h-full bg-[var(--surface-1)] border-r border-[var(--border)] flex flex-col justify-between select-none text-sm transition-all! overflow-hidden shrink-0 ${
         sidebarOpen
-          ? 'w-64 min-w-64 px-5 pb-5 opacity-100'
-          : 'w-0 min-w-0 p-0 border-r-0 opacity-0 pointer-events-none'
+          ? 'w-64 min-w-64 px-5 pb-5 opacity-100 duration-200 ease-out'
+          : 'w-0 min-w-0 p-0 border-r-0 opacity-0 pointer-events-none duration-150 ease-in'
       }`}
     >
       {/* Top Section */}
@@ -138,16 +123,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <Wordmark size="md" theme={effectiveTheme} />
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            title="Collapse sidebar"
-            aria-label="Collapse sidebar"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
-          >
-            <PanelLeftClose size={16} />
-          </button>
+          <div className="flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            {/* Theme: Auto (follow the OS) unless one of these is on. Clicking the active one goes back to Auto. */}
+            <div data-tour="theme-toggle" className="flex items-center gap-0.5">
+              {(
+                [
+                  ['light', Sun, 'Light theme'],
+                  ['dark', Moon, 'Dark theme'],
+                ] as const
+              ).map(([pref, Icon, label]) => {
+                const on = themePreference === pref;
+                return (
+                  <button
+                    key={pref}
+                    type="button"
+                    onClick={() => setThemePreference(on ? 'system' : pref)}
+                    aria-pressed={on}
+                    aria-label={label}
+                    title={on ? `${label} (click to follow system)` : label}
+                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                      on
+                        ? 'bg-[var(--surface-2)] text-[var(--accent)]'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
+                    }`}
+                  >
+                    <Icon size={15} />
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+            >
+              <PanelLeftClose size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Tab Switcher: Library | Folders */}
@@ -285,18 +299,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {activeTab === 'folders' && <LibraryFolders onAddFolder={onAddFolder} />}
       </div>
 
-      {/* Footer Area: Appearance Switcher & Note */}
-      <div className="pt-4 border-t border-[var(--border)] space-y-3">
-        <div className="flex flex-col gap-1.5">
-          <div className="text-[10px] font-bold tracking-wider text-[var(--text-muted)] uppercase">
-            Appearance
-          </div>
-          <ThemeSegmentedControl
-            value={themePreference}
-            onChange={setThemePreference}
-            className="w-full"
-          />
-        </div>
+      {/* Footer Area: Note & Help */}
+      <div className="pt-4 border-t border-[var(--border)]">
         <div className="text-[11px] text-[var(--text-muted)] leading-tight flex items-center justify-between pt-1">
           <span>Local library · runs on this device</span>
           <button

@@ -221,7 +221,7 @@ export const FilterBar: React.FC = () => {
               key={qa.id}
               onClick={() => applyQuickAction(qa)}
               title={`Apply ${qa.name} filter`}
-              className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all ${
+              className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all active:scale-[0.97] ${
                 isActive
                   ? 'bg-[var(--accent)] text-[var(--accent-ink)] shadow-xs ring-1 ring-[var(--accent)]'
                   : 'bg-[var(--surface-2)] text-[var(--text)] border border-[var(--border)] hover:border-[var(--border-focus)]'
@@ -346,6 +346,7 @@ export const FilterBar: React.FC = () => {
             title={tooltip}
             active={true}
             onRemove={() => removeFilter(i)}
+            className="animate-in fade-in zoom-in-95 duration-150"
           />
         );
       })}
@@ -355,7 +356,7 @@ export const FilterBar: React.FC = () => {
         <button
           type="button"
           onClick={clearFilters}
-          className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] px-1 py-1 rounded transition-colors shrink-0"
+          className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] px-1 py-1 rounded transition-colors shrink-0 animate-in fade-in duration-150"
         >
           Clear filters
         </button>

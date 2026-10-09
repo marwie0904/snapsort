@@ -139,7 +139,6 @@ interface UiState {
   themePreference: ThemePreference;
   effectiveTheme: EffectiveTheme;
   setThemePreference: (pref: ThemePreference) => void;
-  cycleTheme: () => void;
   initThemeListener: () => () => void;
 }
 
@@ -618,13 +617,6 @@ export const useUiStore = create<UiState>((set, get) => ({
     const effective = resolveEffectiveTheme(pref);
     applyThemeToDocument(effective);
     set({ themePreference: pref, effectiveTheme: effective });
-  },
-
-  cycleTheme: () => {
-    const current = get().themePreference;
-    const next: ThemePreference =
-      current === 'system' ? 'dark' : current === 'dark' ? 'light' : 'system';
-    get().setThemePreference(next);
   },
 
   initThemeListener: () => {

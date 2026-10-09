@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useOnboardingStore, TutorialTab, SingleSpotlightInfo } from '../stores/useOnboardingStore';
 import { useUiStore } from '../stores/useUiStore';
+import { useDelayedUnmount } from '../utils/useDelayedUnmount';
 
 export interface TutorialDrawerProps {
   isOpen?: boolean;
@@ -45,8 +46,9 @@ export const TutorialDrawer: React.FC<TutorialDrawerProps> = ({
   const handleTabChange = onTabChange || store.setTutorialTab;
   const handleStartTour = onStartTour || (() => store.startTour(0));
   const handleSpotlightSingle = onSpotlightSingle || store.spotlightSingleElement;
+  const mounted = useDelayedUnmount(effectiveOpen, 150);
 
-  if (!effectiveOpen) return null;
+  if (!mounted) return null;
 
   const handleTrySearchPrompt = (prompt: string) => {
     setQ(prompt);
@@ -97,9 +99,9 @@ export const TutorialDrawer: React.FC<TutorialDrawerProps> = ({
     },
     {
       name: 'Theme Toggle',
-      selector: '[data-tour="theme-button"]',
+      selector: '[data-tour="theme-toggle"]',
       icon: SunMoon,
-      description: 'Cycle between System, Light, and Obsidian Dark display modes.',
+      description: 'Pick Light or Dark in the sidebar. Click the active one again to follow the system setting.',
     },
     {
       name: 'Highlight vs Filter Mode',
@@ -111,7 +113,11 @@ export const TutorialDrawer: React.FC<TutorialDrawerProps> = ({
 
   return (
     <aside
-      className="fixed top-0 right-0 z-50 h-full w-96 bg-[var(--surface-1)] border-l border-[var(--border)] shadow-2xl flex flex-col select-none transition-all duration-300 animate-in slide-in-from-right"
+      className={`fixed top-0 right-0 z-50 h-full w-96 bg-[var(--surface-1)] border-l border-[var(--border)] shadow-2xl flex flex-col select-none transition-all ${
+        effectiveOpen
+          ? 'animate-in slide-in-from-right duration-200'
+          : 'animate-out slide-out-to-right duration-150 pointer-events-none'
+      }`}
       aria-label="Tutorial and Shortcuts Drawer"
     >
       {/* Header */}

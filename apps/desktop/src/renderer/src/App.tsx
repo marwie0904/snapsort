@@ -5,7 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { ScopeHeader } from './components/ScopeHeader';
 import { FilterBar } from './components/FilterBar';
-import { MediaGrid } from './components/MediaGrid';
+import { MediaGrid, MediaGridSkeleton } from './components/MediaGrid';
 import { AskAiPanel } from './components/AskAiPanel';
 import { PeopleView } from './components/PeopleView';
 import { ScenesView } from './components/ScenesView';
@@ -18,6 +18,7 @@ import { SpotlightTourOverlay } from './components/SpotlightTourOverlay';
 import { TutorialDrawer } from './components/TutorialDrawer';
 import { useUiStore } from './stores/useUiStore';
 import { useOnboardingStore } from './stores/useOnboardingStore';
+import { useDelayedUnmount } from './utils/useDelayedUnmount';
 import { MockSnapsortApi } from '@snapsort/mock';
 
 // Fallback in-memory mock if not inside Electron contextBridge
@@ -48,6 +49,7 @@ export const App: React.FC = () => {
     clearSelectedFolder,
     closeMediaDetail,
   } = useUiStore();
+  const aiPanelMounted = useDelayedUnmount(aiPanelOpen, 150);
   // Typing runs a text search: wait for a 250 ms pause instead of searching on every key
   const liveQuery = getSearchQuery();
   const [searchQuery, setSearchQuery] = useState(liveQuery);
@@ -118,6 +120,7 @@ export const App: React.FC = () => {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isPlaceholderData,
   } = useInfiniteQuery({
     queryKey: ['query', searchQuery],
     queryFn: ({ pageParam }) => api.query({ search: searchQuery, cursor: pageParam, limit: PAGE }),
@@ -130,6 +133,8 @@ export const App: React.FC = () => {
   const total = queryResult?.total ?? 0;
   const clipsCount = queryResult?.facets?.videos ?? 0;
   const photosCount = queryResult?.facets?.images ?? 0;
+  // Typed but not searched yet, or the grid still shows the previous search's results
+  const searching = liveKey !== JSON.stringify(searchQuery) || isLoading || isPlaceholderData;
   const errorCode = (error as { code?: string } | null)?.code;
 
   // A drive that went away takes its folder selection and open file with it
@@ -166,11 +171,11 @@ export const App: React.FC = () => {
       {/* 1. Left Sidebar */}
       <Sidebar counts={counts} onAddFolder={handleAddFolder} />
 
-      {/* 2. Center Content Area */}
-      <main className={`flex-1 h-full flex flex-col min-w-0 overflow-hidden px-8 transition-all duration-300 ${sidebarOpen ? '' : 'pl-20'}`}>
+      {/* 2. Center Content Area. transition-all! (here and on the sidebar) beats the theme color transition tokens.css sets on main and aside. */}
+      <main className={`flex-1 h-full flex flex-col min-w-0 overflow-hidden px-8 transition-all! ${sidebarOpen ? 'duration-200 ease-out' : 'pl-20 duration-150 ease-in'}`}>
         {/* Top Search & Filter Bar, doubles as the window drag area */}
         <div className={`app-drag shrink-0 pb-2 ${sidebarOpen ? 'pt-6' : 'pt-7'}`}>
-          <TopBar />
+          <TopBar searching={searching} />
         </div>
 
         {notice && (
@@ -226,10 +231,8 @@ export const App: React.FC = () => {
 
             {/* Scrollable Media Grid Area */}
             <div className="flex-1 overflow-y-auto pt-2 px-2 -mx-2">
-              {isLoading ? (
-                <div className="h-64 flex items-center justify-center text-xs text-[var(--text-muted)]">
-                  Loading footage...
-                </div>
+              {searching ? (
+                <MediaGridSkeleton />
               ) : error && items.length === 0 ? (
                 <div className="h-64 flex flex-col items-center justify-center gap-3 text-xs text-[var(--text-muted)] text-center">
                   <span className="max-w-md">
@@ -281,10 +284,19 @@ export const App: React.FC = () => {
       </main>
 
       {/* 3. Right Ask AI Panel */}
-      {aiPanelOpen && (
-        <AskAiPanel
-          currentMatchedCount={queryResult?.matched ?? queryResult?.total ?? 0}
-        />
+      {/* Opens and closes by animating its one grid column. The panel keeps its width and the root clips it. */}
+      {aiPanelMounted && (
+        <div
+          className={`grid grid-cols-[1fr] shrink-0 ${
+            aiPanelOpen ? 'animate-[panel-in_200ms_ease-out]' : 'animate-[panel-out_150ms_ease-in_forwards] pointer-events-none'
+          }`}
+        >
+          <div className="min-w-0">
+            <AskAiPanel
+              currentMatchedCount={queryResult?.matched ?? queryResult?.total ?? 0}
+            />
+          </div>
+        </div>
       )}
 
       {/* 4. Onboarding & Tutorial Overlays */}

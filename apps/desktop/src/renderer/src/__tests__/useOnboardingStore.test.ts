@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useOnboardingStore, TOUR_STEPS } from '../stores/useOnboardingStore';
+import { useUiStore } from '../stores/useUiStore';
 
 // Simple mock for localStorage in Node environment
 const localStorageMock = (() => {
@@ -126,5 +127,39 @@ describe('useOnboardingStore', () => {
     expect(state.welcomeOpen).toBe(true);
     expect(state.tourActive).toBe(false);
     expect(state.singleSpotlight).toBeNull();
+  });
+
+  it('closes the Ask AI panel 3 s after the tour ends, unless the user toggles it or restarts the tour', () => {
+    vi.useFakeTimers();
+    const store = useOnboardingStore.getState();
+    const ui = useUiStore.getState();
+    const panelOpen = () => useUiStore.getState().aiPanelOpen;
+
+    ui.setAiPanelOpen(true);
+    store.startTour();
+    store.endTour();
+    vi.advanceTimersByTime(2999);
+    expect(panelOpen()).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(panelOpen()).toBe(false);
+
+    // The user closes and reopens it in the 3 s: it stays open
+    ui.setAiPanelOpen(true);
+    store.startTour();
+    store.endTour();
+    ui.toggleAiPanel();
+    ui.toggleAiPanel();
+    vi.advanceTimersByTime(3000);
+    expect(panelOpen()).toBe(true);
+
+    // The tour starts again in the 3 s: it stays open
+    store.startTour();
+    store.endTour();
+    store.startTour();
+    vi.advanceTimersByTime(3000);
+    expect(panelOpen()).toBe(true);
+
+    store.endTour();
+    vi.useRealTimers();
   });
 });

@@ -41,11 +41,11 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
               e.dataTransfer.effectAllowed = 'copyMove';
             }}
             onClick={() => onItemClick?.(item.id)}
-            className="group flex flex-col cursor-pointer select-none"
+            className="group flex flex-col cursor-pointer select-none animate-in fade-in slide-in-from-bottom-1 duration-200"
           >
             {/* Card Thumbnail Container */}
             <div
-              className={`relative aspect-[16/10] rounded-xl bg-[var(--card-bg)] overflow-hidden transition-all duration-150 ${
+              className={`relative aspect-[16/10] rounded-xl bg-[var(--card-bg)] overflow-hidden transition-all duration-150 active:scale-[0.98] ${
                 showYellowRing
                   ? 'border-2 border-[var(--accent)] shadow-[0_0_16px_-2px_rgba(255,196,0,0.25)]'
                   : 'border border-[var(--card-border)] hover:border-[var(--border-focus)]'
@@ -124,3 +124,19 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
     </div>
   );
 };
+
+/** Placeholder tiles while a search runs. */
+export const MediaGridSkeleton: React.FC = () => (
+  <div
+    role="status"
+    aria-label="Searching"
+    className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-4 pb-12 animate-pulse motion-reduce:animate-none"
+  >
+    {Array.from({ length: 18 }, (_, i) => (
+      <div key={i} className="flex flex-col">
+        <div className="aspect-[16/10] rounded-xl bg-[var(--surface-2)]" />
+        <div className="mt-2 h-2.5 w-2/3 rounded bg-[var(--surface-2)]" />
+      </div>
+    ))}
+  </div>
+);

@@ -92,7 +92,7 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
           data-tour="mode-toggle"
           onClick={() => setView(view === 'highlight' ? 'filter' : 'highlight')}
           title="Toggle between hiding non-matches and highlighting them"
-          className="px-3 py-1.5 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-focus)] transition-colors cursor-pointer"
+          className="px-3 py-1.5 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-focus)] transition active:scale-[0.97] cursor-pointer"
         >
           {view === 'highlight' ? 'Mode: Highlight' : 'Mode: Filter only'}
         </button>
@@ -100,7 +100,7 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
         {/* Sort Pill */}
         <button
           onClick={() => setSort(sorts[(sorts.indexOf(sort) + 1) % sorts.length])}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition active:scale-[0.97]"
         >
           <ArrowUpDown size={12} className="text-[var(--text-muted)]" />
           <span>

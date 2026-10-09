@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Calendar, ChevronDown } from 'lucide-react';
+import { useDelayedUnmount } from '../utils/useDelayedUnmount';
 
 export interface DateRangePillProps {
   from?: string;
@@ -14,6 +15,7 @@ const inputClass =
 /** Capture date range picker, styled like FacetPopoverPill. */
 export const DateRangePill: React.FC<DateRangePillProps> = ({ from, to, onChange }) => {
   const [open, setOpen] = useState(false);
+  const mounted = useDelayedUnmount(open, 120);
   const popoverRef = useRef<HTMLDivElement>(null);
   const active = Boolean(from || to);
 
@@ -47,7 +49,7 @@ export const DateRangePill: React.FC<DateRangePillProps> = ({ from, to, onChange
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Filter by capture date"
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition active:scale-[0.97] ${
           active || open
             ? 'bg-[var(--accent)] text-[var(--accent-ink)] font-semibold shadow-xs'
             : 'bg-[var(--surface-2)] text-[var(--text)] border border-[var(--border)] hover:border-[var(--border-focus)]'
@@ -64,8 +66,14 @@ export const DateRangePill: React.FC<DateRangePillProps> = ({ from, to, onChange
         />
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-2 w-60 bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl shadow-dropdown p-2.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
+      {mounted && (
+        <div
+          className={`absolute top-full left-0 mt-2 w-60 bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl shadow-dropdown p-2.5 z-50 text-xs origin-top-left ${
+            open
+              ? 'animate-in fade-in zoom-in-95 slide-in-from-top-1 duration-150'
+              : 'animate-out fade-out zoom-out-95 duration-120 pointer-events-none'
+          }`}
+        >
           <div className="pb-2 border-b border-[var(--border)] text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
             Capture date
           </div>

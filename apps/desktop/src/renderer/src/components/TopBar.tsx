@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Search, Image, Sparkles, PanelLeft, Layers, X, HelpCircle } from 'lucide-react';
-import { ThemeQuickButton } from '@snapsort/ui';
+import { Search, Loader2, Image, Sparkles, PanelLeft, Layers, X, HelpCircle } from 'lucide-react';
 import { useUiStore } from '../stores/useUiStore';
 import { useShelfStore } from '../stores/useShelfStore';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
@@ -15,7 +14,7 @@ function getApi() {
   return mockApiFallback;
 }
 
-export const TopBar: React.FC = () => {
+export const TopBar: React.FC<{ searching?: boolean }> = ({ searching = false }) => {
   const api = useMemo(() => getApi(), []);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -31,9 +30,6 @@ export const TopBar: React.FC = () => {
     toggleSidebar,
     currentView,
     navigateToLibrary,
-    themePreference,
-    effectiveTheme,
-    cycleTheme,
   } = useUiStore();
 
   const { openTutorialDrawer } = useOnboardingStore();
@@ -102,7 +98,7 @@ export const TopBar: React.FC = () => {
         onClick={toggleSidebar}
         title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
         aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        className={`p-2 rounded-xl border transition-all select-none shrink-0 ${
+        className={`p-2 rounded-xl border transition-all active:scale-[0.97] select-none shrink-0 ${
           sidebarOpen
             ? 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-focus)]'
             : 'bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-ink)] hover:brightness-105 shadow-sm'
@@ -116,11 +112,15 @@ export const TopBar: React.FC = () => {
         data-tour="search-bar"
         className="flex-1 min-w-0 flex items-center bg-[var(--surface-2)] border border-[var(--border)] rounded-full px-4 py-2 text-sm text-[var(--text)] focus-within:border-[var(--border-focus)] transition-all"
       >
-        <Search size={16} className="text-[var(--text-muted)] mr-3 shrink-0" />
+        {searching ? (
+          <Loader2 size={16} aria-label="Searching" className="text-[var(--accent)] mr-3 shrink-0 animate-spin" />
+        ) : (
+          <Search size={16} className="text-[var(--text-muted)] mr-3 shrink-0" />
+        )}
 
         {/* Visual similarity active chip */}
         {similarTo && (
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mr-2 rounded-full bg-[var(--accent)] text-[var(--accent-ink)] text-xs font-semibold shrink-0">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mr-2 rounded-full bg-[var(--accent)] text-[var(--accent-ink)] text-xs font-semibold shrink-0 animate-in fade-in zoom-in-95 duration-150">
             <Image size={12} />
             <span>Image reference</span>
             <button
@@ -164,7 +164,7 @@ export const TopBar: React.FC = () => {
         data-tour="shelf-button"
         type="button"
         onClick={openShelf}
-        className="flex items-center gap-1.5 px-3.5 py-2 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition-colors select-none shrink-0 group cursor-pointer"
+        className="flex items-center gap-1.5 px-3.5 py-2 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition active:scale-[0.97] select-none shrink-0 group cursor-pointer"
         title="Open Shelf Pop-up Window (Ctrl+Shift+S / ⌘⇧S)"
         aria-label="Open Staging Shelf window"
       >
@@ -177,22 +177,13 @@ export const TopBar: React.FC = () => {
         )}
       </button>
 
-      {/* Quick Theme Toggle Button */}
-      <div data-tour="theme-button" className="shrink-0">
-        <ThemeQuickButton
-          preference={themePreference}
-          effectiveTheme={effectiveTheme}
-          onCycle={cycleTheme}
-        />
-      </div>
-
       {/* Tutorial & Help Button */}
       <button
         type="button"
         onClick={() => openTutorialDrawer('interact')}
         aria-label="Open Tutorial & Help"
         title="Tutorial, Guide & Shortcuts (? / F1)"
-        className="flex items-center justify-center p-2 rounded-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors select-none shrink-0 cursor-pointer"
+        className="flex items-center justify-center p-2 rounded-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] text-[var(--text-muted)] hover:text-[var(--text)] transition active:scale-[0.97] select-none shrink-0 cursor-pointer"
       >
         <HelpCircle size={15} />
       </button>
@@ -203,7 +194,7 @@ export const TopBar: React.FC = () => {
         type="button"
         onClick={toggleAiPanel}
         aria-label="Toggle Ask AI Assistant"
-        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-colors select-none shrink-0 ${
+        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition active:scale-[0.97] select-none shrink-0 ${
           aiPanelOpen
             ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
             : 'bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] text-[var(--text)]'

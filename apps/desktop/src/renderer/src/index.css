@@ -31,3 +31,51 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #3a3a3a;
 }
+
+/* Enter and exit animations with tw-animate-css names (that package is not installed):
+   animate-in / animate-out plus fade, zoom and slide modifiers. duration-* sets the length.
+   They use the translate and scale properties so an inline transform still applies. */
+@property --anim-opacity { syntax: "*"; inherits: false; }
+@property --anim-x { syntax: "*"; inherits: false; }
+@property --anim-y { syntax: "*"; inherits: false; }
+@property --anim-scale { syntax: "*"; inherits: false; }
+@keyframes anim-enter {
+  from {
+    opacity: var(--anim-opacity, 1);
+    translate: var(--anim-x, 0) var(--anim-y, 0);
+    scale: var(--anim-scale, 1);
+  }
+}
+@keyframes anim-exit {
+  to {
+    opacity: var(--anim-opacity, 1);
+    translate: var(--anim-x, 0) var(--anim-y, 0);
+    scale: var(--anim-scale, 1);
+  }
+}
+@utility animate-in { animation: anim-enter var(--tw-duration, 200ms) cubic-bezier(0, 0, 0.2, 1); }
+@utility animate-out { animation: anim-exit var(--tw-duration, 150ms) cubic-bezier(0.4, 0, 1, 1) forwards; }
+@utility fade-in { --anim-opacity: 0; }
+@utility fade-out { --anim-opacity: 0; }
+@utility zoom-in-* { --anim-scale: calc(--value(integer) / 100); }
+@utility zoom-out-* { --anim-scale: calc(--value(integer) / 100); }
+@utility slide-in-from-top-* { --anim-y: calc(--value(integer) * -0.25rem); }
+@utility slide-in-from-bottom-* { --anim-y: calc(--value(integer) * 0.25rem); }
+@utility slide-in-from-right { --anim-x: 100%; }
+@utility slide-out-to-right { --anim-x: 100%; }
+
+/* Ask AI panel width: App.tsx puts the panel in a one-column grid and animates the column */
+@keyframes panel-in { from { grid-template-columns: 0fr; } }
+@keyframes panel-out { to { grid-template-columns: 0fr; } }
+
+/* Reduced motion: every animation and transition jumps to its end state.
+   In a layer so it also beats important utilities such as transition-all! */
+@layer base {
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+    }
+  }
+}

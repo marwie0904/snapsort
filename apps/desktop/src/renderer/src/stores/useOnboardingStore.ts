@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useUiStore } from './useUiStore';
 
 export interface TourStep {
   id: string;
@@ -222,4 +223,18 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => {
       });
     },
   };
+});
+
+// When the tour ends (finished, skipped or closed), close the Ask AI panel 3 s later.
+// Toggling the panel or restarting the tour in those 3 s cancels it.
+let closeAiPanelTimer: ReturnType<typeof setTimeout> | undefined;
+useOnboardingStore.subscribe((s, prev) => {
+  if (s.tourActive === prev.tourActive) return;
+  clearTimeout(closeAiPanelTimer);
+  if (!s.tourActive) {
+    closeAiPanelTimer = setTimeout(() => useUiStore.getState().setAiPanelOpen(false), 3000);
+  }
+});
+useUiStore.subscribe((s, prev) => {
+  if (s.aiPanelOpen !== prev.aiPanelOpen) clearTimeout(closeAiPanelTimer);
 });

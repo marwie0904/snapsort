@@ -227,20 +227,6 @@ describe('useUiStore Quick Actions', () => {
       expect(mockDocument.documentElement.classList.contains('light')).toBe(false);
     });
 
-    it('cycles through system -> dark -> light -> system', () => {
-      useUiStore.getState().setThemePreference('system');
-      expect(useUiStore.getState().themePreference).toBe('system');
-
-      useUiStore.getState().cycleTheme();
-      expect(useUiStore.getState().themePreference).toBe('dark');
-
-      useUiStore.getState().cycleTheme();
-      expect(useUiStore.getState().themePreference).toBe('light');
-
-      useUiStore.getState().cycleTheme();
-      expect(useUiStore.getState().themePreference).toBe('system');
-    });
-
     it('initializes theme listener and returns cleanup function', () => {
       const cleanup = useUiStore.getState().initThemeListener();
       expect(typeof cleanup).toBe('function');

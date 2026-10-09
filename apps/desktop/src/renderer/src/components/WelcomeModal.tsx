@@ -2,6 +2,7 @@ import React from 'react';
 import { Sparkles, BookOpen, ShieldCheck, ArrowRight, X } from 'lucide-react';
 import { Wordmark, AppIcon } from '@snapsort/ui';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
+import { useDelayedUnmount } from '../utils/useDelayedUnmount';
 
 export interface WelcomeModalProps {
   isOpen?: boolean;
@@ -21,17 +22,24 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
   const handleClose = onClose || store.closeWelcome;
   const handleStartTour = onStartTour || (() => store.startTour(0));
   const handleOpenTutorial = onOpenTutorial || (() => store.openTutorialDrawer('interact'));
+  const mounted = useDelayedUnmount(effectiveOpen, 150);
 
-  if (!effectiveOpen) return null;
+  if (!mounted) return null;
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="welcome-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md ${
+        effectiveOpen ? 'animate-in fade-in duration-200' : 'animate-out fade-out duration-150 pointer-events-none'
+      }`}
     >
-      <div className="relative w-full max-w-lg bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl p-7 shadow-2xl overflow-hidden">
+      <div
+        className={`relative w-full max-w-lg bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl p-7 shadow-2xl overflow-hidden ${
+          effectiveOpen ? 'animate-in zoom-in-95 slide-in-from-bottom-2 duration-200' : 'animate-out zoom-out-95 duration-150'
+        }`}
+      >
         {/* Amber Ambient Glow */}
         <div
           className="absolute -top-24 -left-24 w-64 h-64 pointer-events-none rounded-full opacity-30"
