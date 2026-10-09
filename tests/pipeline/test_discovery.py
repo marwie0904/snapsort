@@ -39,6 +39,16 @@ def test_skips_underscore_files_and_broken_imports(tmp_path, monkeypatch, capsys
     assert "broken.py failed to import" in capsys.readouterr().err
 
 
+def test_skips_modules_whose_constructor_raises(tmp_path, monkeypatch, capsys):
+    broken = MODULE_SRC.format(name="ctor") + "\n    def __init__(self):\n        raise RuntimeError('no gpu')\n"
+    pkg = make_package(tmp_path, monkeypatch, {
+        "good.py": MODULE_SRC.format(name="good"),
+        "ctor.py": broken,
+    })
+    assert [m.name for m in discover(pkg)] == ["good"]
+    assert "ctor.M failed to instantiate" in capsys.readouterr().err
+
+
 def test_rejects_duplicate_names(tmp_path, monkeypatch):
     pkg = make_package(tmp_path, monkeypatch, {
         "one.py": MODULE_SRC.format(name="same"),

@@ -13,9 +13,9 @@ NAME = re.compile(r"[a-z0-9_]+")
 
 
 def discover(package: str = __name__) -> list[Module]:
-    """Instances of every Module in the package, sorted by name. A file that fails to import
-    is skipped with a warning. Raises ValueError on an invalid or duplicate name or a
-    version that is not a non-empty str."""
+    """Instances of every Module in the package, sorted by name. A file that fails to import,
+    or a Module whose constructor raises, is skipped with a warning. Raises ValueError on an
+    invalid or duplicate name or a version that is not a non-empty str."""
     pkg = importlib.import_module(package)
     found: list[Module] = []
     for info in pkgutil.iter_modules(pkg.__path__):
@@ -27,8 +27,13 @@ def discover(package: str = __name__) -> list[Module]:
             print(f"warning: {info.name}.py failed to import, skipped: {type(e).__name__}: {e}",
                   file=sys.stderr)
             continue
-        found += [cls() for _, cls in inspect.getmembers(mod, inspect.isclass)
-                  if issubclass(cls, Module) and cls is not Module and cls.__module__ == mod.__name__]
+        for _, cls in inspect.getmembers(mod, inspect.isclass):
+            if issubclass(cls, Module) and cls is not Module and cls.__module__ == mod.__name__:
+                try:
+                    found.append(cls())
+                except Exception as e:
+                    print(f"warning: {info.name}.{cls.__name__} failed to instantiate, skipped: "
+                          f"{type(e).__name__}: {e}", file=sys.stderr)
     names = [getattr(m, "name", None) for m in found]
     bad = [n for n in names if not isinstance(n, str) or not NAME.fullmatch(n)]
     if bad:
