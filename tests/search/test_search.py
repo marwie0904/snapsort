@@ -58,6 +58,12 @@ def place(conn, frame_id, label):
         conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'location', ?)", (frame_id, label))
 
 
+def captured(conn, frame_id, when):
+    """A capture_date result as the module stores it: local time 'YYYY-MM-DD HH:MM:SS'."""
+    with conn:
+        conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'capture_date', ?)", (frame_id, when))
+
+
 def ts_of(hit):
     return [t for t, _ in hit.matches]
 
@@ -170,6 +176,58 @@ def test_media_kind(db):
     assert [h.media_id for h in search(db, [{"kind": "mediaKind", "value": "video"}])] == [b]
 
 
+def test_date_range_includes_both_days(db):
+    ids = {}
+    for day in ("2026-07-14", "2026-07-15", "2026-07-31", "2026-08-01"):
+        mid, [fid] = media(db, "image")
+        captured(db, fid, f"{day} 23:59:59")
+        ids[day] = mid
+    media(db, "image")  # no capture date: never matches
+
+    def found(lo, hi):
+        return {h.media_id for h in search(db, [{"kind": "date", "from": lo, "to": hi}])}
+
+    assert found("2026-07-15", "2026-07-31") == {ids["2026-07-15"], ids["2026-07-31"]}
+    assert found("2026-07-15", None) == {ids["2026-07-15"], ids["2026-07-31"], ids["2026-08-01"]}
+    assert found(None, "2026-07-14") == {ids["2026-07-14"]}
+    assert found("2026-09-01", None) == set()
+
+
+def test_date_matches_the_whole_video(db):
+    vid, f = media(db, "video", frames=3)
+    captured(db, f[0], "2026-07-15 15:13:55")
+    [hit] = search(db, [{"kind": "date", "from": "2026-07-15"}])
+    assert hit.media_id == vid and ts_of(hit) == [0.0, 1.0, 2.0]
+    assert hit.captured_at == "2026-07-15 15:13:55"
+
+
+def test_date_stacks_with_person(db):
+    july, f = media(db, "video", frames=3)
+    captured(db, f[0], "2026-07-15 10:00:00")
+    august, [g] = media(db, "image")
+    captured(db, g, "2026-08-02 10:00:00")
+    anna = person(db, [f[2], g])
+    filters = [{"kind": "date", "from": "2026-07-01", "to": "2026-07-31"},
+               {"kind": "person", "ids": [anna], "match": "all"}]
+    [hit] = search(db, filters)
+    assert hit.media_id == july and ts_of(hit) == [2.0]  # the person's frame, not the whole video
+    [hit] = search(db, filters, scope="frame")
+    assert ts_of(hit) == [2.0]  # a whole-file filter doesn't narrow the frames
+    assert {h.media_id for h in search(db, filters, combine="any")} == {july, august}
+
+
+def test_newest_and_oldest_use_capture_time(db):
+    old, [f] = media(db, "image", added_at="2026-10-09 12:00:00")
+    captured(db, f, "2020-01-01 00:00:00")
+    new, [g] = media(db, "image", added_at="2026-10-09 10:00:00")
+    captured(db, g, "2026-07-15 10:00:00")
+    undated, _ = media(db, "image", added_at="2026-10-09 11:00:00")  # falls back to added_at
+    hits = search(db, [], sort="newest")
+    assert [h.media_id for h in hits] == [undated, new, old]
+    assert [h.captured_at for h in hits] == [None, "2026-07-15 10:00:00", "2020-01-01 00:00:00"]
+    assert [h.media_id for h in search(db, [], sort="oldest")] == [old, new, undated]
+
+
 def test_image_hit_has_no_timeline(db):
     _, f = media(db, "image")
     person(db, f)
@@ -214,6 +272,13 @@ def test_sorts_and_limit(db):
     ([{"kind": "person", "ids": [1], "match": "some"}], "person match must be all or any"),
     ([{"kind": "place", "name": "atlantis"}], "no media at place 'atlantis'. see snapsort places"),
     ([{"kind": "mediaKind", "value": "gif"}], "mediaKind must be image or video"),
+    ([{"kind": "date"}], "date filter needs from or to"),
+    ([{"kind": "date", "from": "2026-7-1"}], "date must be YYYY-MM-DD, got '2026-7-1'"),
+    ([{"kind": "date", "to": "2026-02-30"}], "date must be YYYY-MM-DD, got '2026-02-30'"),
+    ([{"kind": "date", "from": "2026-08-01", "to": "2026-07-01"}],
+     "date range starts after it ends: 2026-08-01 > 2026-07-01"),
+    ([{"kind": "date", "from": "2026-07-01"}],
+     "no capture dates in this library. run snapsort ingest --modules capture_date"),
     ([{"kind": "label", "module": "objects", "labelId": "dog"}], "unsupported filter kind: 'label'"),
     ([{"kind": "folder", "id": 1}], "unsupported filter kind: 'folder'"),
 ])

@@ -1,8 +1,10 @@
 """Search: stack filters over stored results and return the matching media, with time segments for videos.
 
 Design: docs/design/2026-10-09-filters.md."""
+import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +15,7 @@ GAP = 2.0   # seconds; matches this close merge into one segment, which bridges 
 SORTS = ("similarity", "newest", "oldest", "name")
 MIN_SCORE = 0.5   # calibrated on a real folder, see the design's Findings
 CHUNK = 900       # media ids per IN (...) query, under SQLite's oldest variable limit (999)
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 Match = dict[int, set[int] | None]   # media id -> matched frame ids; None = the whole file, no frame marks
 
@@ -37,6 +40,7 @@ class Hit:
     path: str
     kind: str                                   # "image" | "video"
     added_at: str
+    captured_at: str | None                     # local capture time "YYYY-MM-DD HH:MM:SS"; None if unknown
     score: float | None                         # best frame score; None without similar
     matches: list[tuple[float, float | None]]   # (ts, score) per matched frame; videos only
     segments: list[Segment]                     # videos only
@@ -187,7 +191,37 @@ def _media_kind(conn, f: dict, scope: str) -> Match:
     return dict.fromkeys(r[0] for r in conn.execute("SELECT id FROM media WHERE kind = ?", (value,)))
 
 
-FILTERS = {"person": _person, "place": _place, "mediaKind": _media_kind}
+def _date(conn, f: dict, scope: str) -> Match:
+    """The whole files captured from `from` to `to`, both days included. Files without a capture date never match."""
+    lo, hi = f.get("from"), f.get("to")
+    if lo is None and hi is None:
+        raise QueryError("date filter needs from or to")
+    for day in (lo, hi):
+        if day is not None and not _is_day(day):
+            raise QueryError(f"date must be YYYY-MM-DD, got {day!r}")
+    if lo is not None and hi is not None and lo > hi:
+        raise QueryError(f"date range starts after it ends: {lo} > {hi}")
+    if conn.execute("SELECT 1 FROM results WHERE module = 'capture_date' LIMIT 1").fetchone() is None:
+        raise QueryError("no capture dates in this library. run snapsort ingest --modules capture_date")
+    rows = conn.execute(
+        "SELECT DISTINCT f.media_id FROM results r JOIN frames f ON f.id = r.frame_id "
+        "WHERE r.module = 'capture_date' AND substr(r.label, 1, 10) BETWEEN ? AND ?",
+        (lo or "0000-00-00", hi or "9999-99-99")).fetchall()
+    return dict.fromkeys(r[0] for r in rows)
+
+
+def _is_day(s) -> bool:
+    """A real calendar day written YYYY-MM-DD."""
+    if not isinstance(s, str) or not DAY.fullmatch(s):
+        return False
+    try:
+        date.fromisoformat(s)
+    except ValueError:
+        return False
+    return True
+
+
+FILTERS = {"person": _person, "place": _place, "mediaKind": _media_kind, "date": _date}
 
 
 def _query_vector(conn, similar: dict) -> np.ndarray:
@@ -247,31 +281,33 @@ def _similar(conn, q: np.ndarray, media: set[int] | None,
 
 def _hits(conn, matched: Match, scores: dict[int, float], gap: float) -> list[Hit]:
     """One Hit per matched file, with its marked frames (every frame for a whole-file match) and their scores."""
+    captured = dict(conn.execute("SELECT f.media_id, r.label FROM results r JOIN frames f ON f.id = r.frame_id "
+                                 "WHERE r.module = 'capture_date'"))
     by_media: dict[int, tuple] = {}
     for fid, mid, ts, path, kind, added_at in conn.execute(FRAMES):
         if mid in matched and (matched[mid] is None or fid in matched[mid]):
-            entry = by_media.setdefault(mid, (path, kind, added_at, []))
-            entry[3].append((ts, scores.get(fid)))
+            entry = by_media.setdefault(mid, (path, kind, added_at, captured.get(mid), []))
+            entry[4].append((ts, scores.get(fid)))
     return [_hit(mid, *entry, gap) for mid, entry in by_media.items()]
 
 
-def _hit(media_id, path, kind, added_at, matches, gap) -> Hit:
+def _hit(media_id, path, kind, added_at, captured_at, matches, gap) -> Hit:
     score = max((s for _, s in matches if s is not None), default=None)
     if kind == "image":
-        return Hit(media_id, path, kind, added_at, score, [], [], None)
+        return Hit(media_id, path, kind, added_at, captured_at, score, [], [], None)
     matches.sort(key=lambda m: m[0])
     best_ts = matches[0][0] if score is None else next(t for t, s in matches if s == score)
-    return Hit(media_id, path, kind, added_at, score, matches, segments(matches, gap), best_ts)
+    return Hit(media_id, path, kind, added_at, captured_at, score, matches, segments(matches, gap), best_ts)
 
 
 def _rank(hits: list[Hit], sort: str, limit: int | None) -> list[Hit]:
     hits.sort(key=lambda h: h.media_id)  # ties keep id order
     if sort == "similarity":  # under OR a file can match without a score: those go last
         hits.sort(key=lambda h: (h.score is None, -(h.score or 0)))
-    elif sort == "newest":  # added_at has 1 s resolution: a tie goes to the later insert
-        hits.sort(key=lambda h: (h.added_at, h.media_id), reverse=True)
+    elif sort == "newest":  # capture time, else added_at; 1 s resolution, so a tie goes to the later insert
+        hits.sort(key=lambda h: (h.captured_at or h.added_at, h.media_id), reverse=True)
     elif sort == "oldest":
-        hits.sort(key=lambda h: (h.added_at, h.media_id))
+        hits.sort(key=lambda h: (h.captured_at or h.added_at, h.media_id))
     else:
         hits.sort(key=lambda h: Path(h.path).name.lower())
     return hits[:limit]
