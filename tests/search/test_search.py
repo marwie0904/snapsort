@@ -58,10 +58,18 @@ def place(conn, frame_id, label):
         conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'location', ?)", (frame_id, label))
 
 
+def checked(conn, media_id):
+    """A capture_date run, which ingest records whether or not the file had a date."""
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO runs (media_id, module, version, status) "
+                     "VALUES (?, 'capture_date', '1', 'done')", (media_id,))
+
+
 def captured(conn, frame_id, when):
-    """A capture_date result as the module stores it: local time 'YYYY-MM-DD HH:MM:SS'."""
+    """A capture_date result as the module stores it (local time 'YYYY-MM-DD HH:MM:SS'), plus its run."""
     with conn:
         conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'capture_date', ?)", (frame_id, when))
+    checked(conn, conn.execute("SELECT media_id FROM frames WHERE id = ?", (frame_id,)).fetchone()[0])
 
 
 def ts_of(hit):
@@ -182,7 +190,8 @@ def test_date_range_includes_both_days(db):
         mid, [fid] = media(db, "image")
         captured(db, fid, f"{day} 23:59:59")
         ids[day] = mid
-    media(db, "image")  # no capture date: never matches
+    undated, _ = media(db, "image")
+    checked(db, undated)  # checked, no capture date: never matches
 
     def found(lo, hi):
         return {h.media_id for h in search(db, [{"kind": "date", "from": lo, "to": hi}])}
@@ -191,6 +200,22 @@ def test_date_range_includes_both_days(db):
     assert found("2026-07-15", None) == {ids["2026-07-15"], ids["2026-07-31"], ids["2026-08-01"]}
     assert found(None, "2026-07-14") == {ids["2026-07-14"]}
     assert found("2026-09-01", None) == set()
+
+
+def test_date_filter_reports_files_never_checked(db):
+    media(db, "image")  # ingested before capture_date existed: no run
+    _, [f] = media(db, "image")
+    captured(db, f, "2026-07-15 10:00:00")
+    with pytest.raises(QueryError, match=re.escape(
+            "1 of 2 files were never checked for a capture date. "
+            "run snapsort ingest --modules capture_date on their folders")):
+        search(db, [{"kind": "date", "from": "2026-07-01"}])
+
+
+def test_date_filter_on_checked_files_without_dates_is_empty(db):
+    mid, _ = media(db, "image")
+    checked(db, mid)
+    assert search(db, [{"kind": "date", "from": "2026-07-01"}]) == []
 
 
 def test_date_matches_the_whole_video(db):
@@ -278,7 +303,7 @@ def test_sorts_and_limit(db):
     ([{"kind": "date", "from": "2026-08-01", "to": "2026-07-01"}],
      "date range starts after it ends: 2026-08-01 > 2026-07-01"),
     ([{"kind": "date", "from": "2026-07-01"}],
-     "no capture dates in this library. run snapsort ingest --modules capture_date"),
+     "1 of 1 files were never checked for a capture date. run snapsort ingest --modules capture_date"),
     ([{"kind": "label", "module": "objects", "labelId": "dog"}], "unsupported filter kind: 'label'"),
     ([{"kind": "folder", "id": 1}], "unsupported filter kind: 'folder'"),
 ])

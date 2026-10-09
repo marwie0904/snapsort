@@ -89,7 +89,7 @@ class Capture:
 - a date filter with neither bound: `date filter needs from or to`
 - a bound that isn't a real `YYYY-MM-DD` date: `date must be YYYY-MM-DD, got '2026-7-1'`
 - `from` after `to`: `date range starts after it ends: 2026-08-01 > 2026-07-01`
-- a date filter when the library has no `capture_date` results at all: `no capture dates in this library. run snapsort ingest --modules capture_date`. A library ingested before this module would otherwise return a silent zero.
+- a date filter when any file has no `capture_date` run: `3 of 43 files were never checked for a capture date. run snapsort ingest --modules capture_date on their folders`. Files ingested before this module would otherwise drop out of the range silently. A fully checked library where no file has a date returns an empty result instead.
 
 ## CLI (`snapsort/cli.py`)
 

@@ -201,8 +201,13 @@ def _date(conn, f: dict, scope: str) -> Match:
             raise QueryError(f"date must be YYYY-MM-DD, got {day!r}")
     if lo is not None and hi is not None and lo > hi:
         raise QueryError(f"date range starts after it ends: {lo} > {hi}")
-    if conn.execute("SELECT 1 FROM results WHERE module = 'capture_date' LIMIT 1").fetchone() is None:
-        raise QueryError("no capture dates in this library. run snapsort ingest --modules capture_date")
+    # a file capture_date never ran on (ingested before the module existed) would silently drop out of the range
+    unchecked, total = conn.execute(
+        "SELECT count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM runs r WHERE r.media_id = m.id "
+        "AND r.module = 'capture_date')), count(*) FROM media m").fetchone()
+    if unchecked:
+        raise QueryError(f"{unchecked} of {total} files were never checked for a capture date. "
+                         "run snapsort ingest --modules capture_date on their folders")
     rows = conn.execute(
         "SELECT DISTINCT f.media_id FROM results r JOIN frames f ON f.id = r.frame_id "
         "WHERE r.module = 'capture_date' AND substr(r.label, 1, 10) BETWEEN ? AND ?",
