@@ -82,6 +82,25 @@ def test_keyframe_extraction_samples_whole_seconds(tmp_path):
         assert np.abs(got - want).max() < 10, (i, got, want)   # half a second off is a 60° hue shift
 
 
+@pytest.mark.parametrize("size, expected", [("2400x1000", (1920, 800)), ("1000x2400", (800, 1920)),
+                                            ("320x240", (320, 240))])
+def test_frames_are_capped_at_1920_on_the_long_side(tmp_path, size, expected):
+    video = tmp_path / "v.mp4"
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "lavfi",
+                    "-i", f"testsrc=duration=2:size={size}:rate=10", str(video)], check=True)
+    files = extract_frames(video, tmp_path / "out")
+    assert [Image.open(f).size for f in files] == [expected, expected]
+
+
+def test_extract_frames_decodes_codecs_videotoolbox_cannot(tmp_path):
+    # VP8 has no hardware decoder on macOS; ffmpeg must fall back to software.
+    video = tmp_path / "v.webm"
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "lavfi",
+                    "-i", "testsrc=duration=3:size=320x240:rate=10", "-c:v", "libvpx", str(video)],
+                   check=True)
+    assert len(extract_frames(video, tmp_path / "out")) == 3
+
+
 def test_extract_frames_fails_cleanly_on_garbage(tmp_path):
     bad = tmp_path / "bad.mp4"
     bad.write_bytes(b"not a video")

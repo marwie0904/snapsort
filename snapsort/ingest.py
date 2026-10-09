@@ -26,6 +26,7 @@ JUNK = {"$RECYCLE.BIN", "System Volume Information"}
 PACKAGES = (".photoslibrary", ".photolibrary", ".fcpbundle", ".imovielibrary")  # app libraries: duplicates
 DATALESS = 0x40000000  # SF_DATALESS: in iCloud, reading it starts a download
 MIN_FREE = 500 * 1024 ** 2  # stop before a file when the library's drive has less free: an hour of video takes ~1 GB
+MAX_FRAME_SIDE = 1920  # video frames are stored at most 1080p (long side), never upscaled
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS media (
@@ -189,12 +190,16 @@ def extract_frames(video: Path, out: Path) -> list[Path]:
     out.mkdir(parents=True)
     if dense_keyframes(video):
         # On keyframe-only input, fps drops the last sample at EOF unless told to pass it through.
-        skip, vf = ["-skip_frame", "nokey"], f"fps={FPS}:eof_action=pass"
+        skip, fps = ["-skip_frame", "nokey"], f"fps={FPS}:eof_action=pass"
     else:
-        skip, vf = [], f"fps={FPS}"
+        skip, fps = [], f"fps={FPS}"
+    scale = (f"scale='min(iw,{MAX_FRAME_SIDE})':'min(ih,{MAX_FRAME_SIDE})'"
+             ":force_original_aspect_ratio=decrease")
+    # videotoolbox: hardware decode (10x faster on 4K HEVC); ffmpeg falls back to software
+    # for codecs it can't handle.
     proc = subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", *skip, "-i", str(video), "-vf", vf, "-q:v", "2",
-         "-start_number", "0", str(out / "%06d.jpg")],
+        ["ffmpeg", "-nostdin", "-v", "error", "-hwaccel", "videotoolbox", *skip, "-i", str(video),
+         "-vf", f"{fps},{scale}", "-q:v", "2", "-start_number", "0", str(out / "%06d.jpg")],
         capture_output=True, text=True,
     )
     files = sorted(out.glob("[0-9]*.jpg"))  # not the ._*.jpg AppleDouble files macOS adds on exFAT/FAT
