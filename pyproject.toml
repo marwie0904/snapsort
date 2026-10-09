@@ -4,9 +4,12 @@ version = "0.1.0"
 description = "Local image and video processing pipeline"
 requires-python = ">=3.12"
 dependencies = [
+    "coremltools>=9.0",
     "numpy>=2.5.3",
     "pillow>=12.3.0",
     "pillow-heif>=1.8.0",
+    "pyobjc-framework-quartz>=12.2.2",
+    "pyobjc-framework-vision>=12.2.2",
     "reverse-geocode>=1.6.6",
     "torch>=2.14.1",
     "transformers>=5.19.0",
