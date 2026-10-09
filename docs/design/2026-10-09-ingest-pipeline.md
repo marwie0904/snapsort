@@ -26,21 +26,34 @@ Pipeline only. Modules bring their own dependencies.
 ## Layout
 
 ```
-pyproject.toml              # console script: snapsort = snapsort.cli:main
+README.md
+pyproject.toml              # console script: snapsort = snapsort.cli:main; pytest testpaths = ["tests"]
+.python-version             # 3.12
+.gitignore                  # .snapsort/, .venv/, __pycache__/
+docs/
+  design/                   # what and why, approved before building: YYYY-MM-DD-<topic>.md
+  plans/                    # step-by-step build plan for one design, same file name
 snapsort/
   contract.py               # Frame, Result, Module. The shared interface.
-  ingest.py                 # input resolution, frame extraction, runner, DB writes
+  ingest.py                 # input resolution, frame extraction, runner, validate(), DB writes
   cli.py                    # argparse entry point
   modules/
     __init__.py             # discovery
     example.py              # template module
-tests/test_pipeline.py
-.snapsort/                  # data dir, git-ignored, created in the current working directory
+tests/
+  conftest.py               # shared fixtures: tmp data dir, generated PNG + 3 s video, sample Frames
+  e2e/
+    test_ingest.py          # whole pipeline: run_ingest with test-only modules, plus one CLI run
+  modules/
+    test_example.py         # one file per module: test_<name>.py
+.snapsort/                  # runtime data, git-ignored, created in the current working directory
   snapsort.db
   frames/<media_id>/<idx:06d>.jpg
 ```
 
-Changes to `contract.py` require agreement from both developers.
+- A design and its plan share a file name, so `docs/design/X.md` pairs with `docs/plans/X.md`.
+- Every module has a test file at `tests/modules/test_<name>.py`. Removing a module means deleting `snapsort/modules/<name>.py` and that test file.
+- Changes to `contract.py` require agreement from both developers.
 
 ## Flow
 
@@ -126,7 +139,7 @@ class Module:
 
 ### Validation
 
-The runner checks every `Result` before storing it. Any failure counts as that module's error for the current file.
+The runner checks every `Result` before storing it with `validate(results, frames) -> list[Result]` in `ingest.py`. It returns normalized copies or raises `ContractError`. Any failure counts as that module's error for the current file. Module tests call the same function.
 
 - It is a `Result`, and `frame_idx` is one of the batch's frame idx values.
 - `label`: `None` or `str`. The runner strips it and lowercases it.
@@ -248,13 +261,31 @@ snapsort modules                            # list discovered modules: name, ver
 1. Copy `snapsort/modules/example.py` to `snapsort/modules/<name>.py`.
 2. Set `name`, then implement `setup()` and `process()`.
 3. `uv add <dependencies>`.
-4. `uv run snapsort ingest <path> --modules <name>`.
+4. Copy `tests/modules/test_example.py` to `tests/modules/test_<name>.py` and add checks specific to the module.
+5. `uv run pytest tests/modules/test_<name>.py`, then `uv run snapsort ingest <path> --modules <name>`.
 
 `example.py` returns one result per frame: `label` = the name of the channel with the highest mean (`"red"`, `"green"` or `"blue"`), `score = 1.0`, and `vector` = the mean RGB scaled to 0–1. This exercises both label and vector storage.
 
 ## Testing
 
-`tests/test_pipeline.py` (pytest) generates fixtures in a temp dir: one PNG, and a 3 s video from `ffmpeg -f lavfi -i testsrc=duration=3:size=320x240:rate=10`. It calls `run_ingest` with module instances defined in the test file. Checks:
+pytest. `uv run pytest` runs everything. `uv run pytest tests/e2e` or `uv run pytest tests/modules` runs one suite.
+
+### Shared fixtures (`tests/conftest.py`)
+
+Fixtures are generated into a temp dir at test time, so no binary files are committed:
+
+- `data_dir`: an empty temp `.snapsort` directory
+- `sample_image`: a PNG
+- `sample_video`: a 3 s video from `ffmpeg -f lavfi -i testsrc=duration=3:size=320x240:rate=10`
+- `sample_frames`: a list of `Frame` objects built from the image and video, for module tests
+
+### Module tests (`tests/modules/test_<name>.py`)
+
+At minimum, each one calls `setup()`, runs `process(sample_frames)`, and passes the output through `validate` without an error. Module-specific checks are added on top.
+
+### E2E suite (`tests/e2e/test_ingest.py`)
+
+This suite tests the pipeline, not real modules. It calls `run_ingest` with test-only modules defined in the file. Checks:
 
 1. The video produces 3 frames with `ts` 0, 1, 2. The image produces 1 frame with `ts` NULL.
 2. Results and `done` runs rows exist for each module.
@@ -262,3 +293,4 @@ snapsort modules                            # list discovered modules: name, ver
 4. Bumping a module's `version` reprocesses only that module.
 5. A module whose `process()` raises gets an `error` runs row. The other modules still store results. The return value is `False`.
 6. A module returning an out-of-range `bbox` is treated as an error.
+7. `snapsort ingest <sample_video> --modules example`, run as a subprocess, exits 0 and stores results.
