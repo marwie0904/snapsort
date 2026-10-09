@@ -154,7 +154,7 @@ def extract_frames(video: Path, out: Path) -> list[Path]:
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     proc = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(video), "-vf", f"fps={FPS}", "-q:v", "2",
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(video), "-vf", f"fps={FPS}", "-q:v", "2",
          "-start_number", "0", str(out / "%06d.jpg")],
         capture_output=True, text=True,
     )

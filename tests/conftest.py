@@ -27,7 +27,7 @@ def sample_video(tmp_path) -> Path:
     path = tmp_path / "media" / "clip.mp4"
     path.parent.mkdir(exist_ok=True)
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+        ["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "lavfi",
          "-i", "testsrc=duration=3:size=320x240:rate=10", str(path)],
         check=True,
     )
