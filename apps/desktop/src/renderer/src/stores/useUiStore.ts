@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import type { Filter, LibrarySearch } from '@snapsort/contract';
 
+export interface QuickAction {
+  id: string;
+  name: string;
+  filters: Filter[];
+  scope?: 'all' | 'images' | 'videos';
+  view?: 'filter' | 'highlight';
+  createdAt: string;
+}
+
 interface UiState {
   sidebarOpen: boolean;
   activeTab: 'library' | 'folders';
@@ -11,6 +20,8 @@ interface UiState {
   scope: 'all' | 'images' | 'videos';
   q: string;
   filters: Filter[];
+  quickActions: QuickAction[];
+  activeQuickActionId: string | null;
   sort: 'newest' | 'oldest' | 'relevance' | 'name' | 'similarity';
   view: 'filter' | 'highlight';
   aiPanelOpen: boolean;
@@ -30,6 +41,11 @@ interface UiState {
   addFilter: (filter: Filter) => void;
   removeFilter: (index: number) => void;
   clearFilters: () => void;
+  setFilters: (filters: Filter[], quickActionId?: string | null) => void;
+  addQuickAction: (name: string, filters: Filter[], scope?: 'all' | 'images' | 'videos', view?: 'filter' | 'highlight') => QuickAction;
+  removeQuickAction: (id: string) => void;
+  renameQuickAction: (id: string, name: string) => void;
+  applyQuickAction: (action: QuickAction) => void;
   getSearchQuery: () => LibrarySearch;
 }
 
@@ -46,6 +62,19 @@ export const useUiStore = create<UiState>((set, get) => ({
   filters: [
     { kind: 'person', ids: [1, 2], match: 'all', source: 'ai' },
   ],
+  quickActions: [
+    {
+      id: 'qa-default-1',
+      name: 'Groom + Bride',
+      filters: [
+        { kind: 'person', ids: [1, 2], match: 'all', source: 'ai' },
+      ],
+      scope: 'all',
+      view: 'highlight',
+      createdAt: new Date().toISOString(),
+    },
+  ],
+  activeQuickActionId: 'qa-default-1',
   sort: 'newest',
   view: 'highlight', // Default to highlight mode to match reference screenshot!
   aiPanelOpen: typeof window !== 'undefined' ? window.innerWidth >= 1200 : true,
@@ -95,7 +124,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   toggleAiPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),
   setAiPanelOpen: (aiPanelOpen) => set({ aiPanelOpen }),
   addFilter: (filter) =>
-    set((state) => ({ filters: [...state.filters, filter] })),
+    set((state) => ({
+      filters: [...state.filters, filter],
+      activeQuickActionId: null,
+    })),
   removeFilter: (index) =>
     set((state) => {
       const removed = state.filters[index];
@@ -103,20 +135,60 @@ export const useUiStore = create<UiState>((set, get) => ({
       if (removed && removed.kind === 'folder') {
         return {
           filters: newFilters,
+          activeQuickActionId: null,
           selectedFolderId: null,
           selectedFolderName: null,
           selectedFolderDrive: null,
         };
       }
-      return { filters: newFilters };
+      return { filters: newFilters, activeQuickActionId: null };
     }),
   clearFilters: () =>
     set({
       filters: [],
+      activeQuickActionId: null,
       selectedFolderId: null,
       selectedFolderName: null,
       selectedFolderDrive: null,
     }),
+  setFilters: (filters, quickActionId = null) =>
+    set({
+      filters,
+      activeQuickActionId: quickActionId,
+    }),
+  addQuickAction: (name, filters, scope = 'all', view = 'filter') => {
+    const newAction: QuickAction = {
+      id: `qa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: name.trim() || 'Custom Filter',
+      filters,
+      scope,
+      view,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => ({
+      quickActions: [...state.quickActions, newAction],
+      activeQuickActionId: newAction.id,
+    }));
+    return newAction;
+  },
+  removeQuickAction: (id) =>
+    set((state) => ({
+      quickActions: state.quickActions.filter((qa) => qa.id !== id),
+      activeQuickActionId: state.activeQuickActionId === id ? null : state.activeQuickActionId,
+    })),
+  renameQuickAction: (id, name) =>
+    set((state) => ({
+      quickActions: state.quickActions.map((qa) =>
+        qa.id === id ? { ...qa, name: name.trim() || qa.name } : qa
+      ),
+    })),
+  applyQuickAction: (action) =>
+    set((state) => ({
+      filters: [...action.filters],
+      scope: action.scope ?? state.scope,
+      view: action.view ?? state.view,
+      activeQuickActionId: action.id,
+    })),
   getSearchQuery: () => {
     const s = get();
     return {

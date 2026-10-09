@@ -84,7 +84,11 @@ export const App: React.FC = () => {
       </main>
 
       {/* 3. Right Ask AI Panel */}
-      {aiPanelOpen && <AskAiPanel />}
+      {aiPanelOpen && (
+        <AskAiPanel
+          currentMatchedCount={queryResult?.matched ?? queryResult?.total ?? 36}
+        />
+      )}
     </div>
   );
 };
