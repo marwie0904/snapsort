@@ -58,11 +58,11 @@ def place(conn, frame_id, label):
         conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'location', ?)", (frame_id, label))
 
 
-def checked(conn, media_id):
-    """A capture_date run, which ingest records whether or not the file had a date."""
+def checked(conn, media_id, module="capture_date"):
+    """A module run. ingest records capture_date's whether or not the file had a date."""
     with conn:
         conn.execute("INSERT OR REPLACE INTO runs (media_id, module, version, status) "
-                     "VALUES (?, 'capture_date', '1', 'done')", (media_id,))
+                     "VALUES (?, ?, '1', 'done')", (media_id, module))
 
 
 def captured(conn, frame_id, when):
@@ -203,11 +203,13 @@ def test_date_range_includes_both_days(db):
 
 
 def test_date_filter_reports_files_never_checked(db):
-    media(db, "image")  # ingested before capture_date existed: no run
+    old, _ = media(db, "image")
+    checked(db, old, "faces")  # ingested before capture_date existed
+    media(db, "image")  # still being ingested: no runs yet, not counted
     _, [f] = media(db, "image")
     captured(db, f, "2026-07-15 10:00:00")
     with pytest.raises(QueryError, match=re.escape(
-            "1 of 2 files were never checked for a capture date. "
+            "1 of 3 files were never checked for a capture date. "
             "run snapsort ingest --modules capture_date on their folders")):
         search(db, [{"kind": "date", "from": "2026-07-01"}])
 
@@ -302,8 +304,6 @@ def test_sorts_and_limit(db):
     ([{"kind": "date", "to": "2026-02-30"}], "date must be YYYY-MM-DD, got '2026-02-30'"),
     ([{"kind": "date", "from": "2026-08-01", "to": "2026-07-01"}],
      "date range starts after it ends: 2026-08-01 > 2026-07-01"),
-    ([{"kind": "date", "from": "2026-07-01"}],
-     "1 of 1 files were never checked for a capture date. run snapsort ingest --modules capture_date"),
     ([{"kind": "label", "module": "objects", "labelIds": []}], "label filter needs at least one label"),
     ([{"kind": "folder", "id": 1}], "unsupported filter kind: 'folder'"),
 ])

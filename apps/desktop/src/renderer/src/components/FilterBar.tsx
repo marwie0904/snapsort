@@ -6,8 +6,13 @@ import { MockSnapsortApi } from '@snapsort/mock';
 import { Zap, X, Edit2, Check, Users, Box, MapPin } from 'lucide-react';
 import { getLabelFilterIds } from '@snapsort/contract';
 import { FacetPopoverPill } from './FacetPopoverPill';
+import { DateRangePill } from './DateRangePill';
 
 const mockApiFallback = new MockSnapsortApi();
+
+/** 'YYYY-MM-DD' as a local day, e.g. "Jul 14, 2026". */
+const formatDay = (day: string) =>
+  new Date(`${day}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
 function getApi() {
   if (typeof window !== 'undefined' && window.snapsort) {
@@ -32,6 +37,7 @@ export const FilterBar: React.FC = () => {
     getFacetSelection,
     toggleFacetItem,
     setFacetMatch,
+    setFilters,
   } = useUiStore();
   const selectedFolderName = useUiStore((s) => s.selectedFolderName);
 
@@ -101,6 +107,13 @@ export const FilterBar: React.FC = () => {
   const peopleSelection = getFacetSelection('person');
   const objectSelection = getFacetSelection('label');
   const placeSelection = getFacetSelection('place');
+  const dateFilter = filters.find((f) => f.kind === 'date');
+
+  const setDateRange = (from?: string, to?: string) => {
+    if (from && to && from > to) [from, to] = [to, from]; // a typed day can skip the inputs' min/max
+    const rest = filters.filter((f) => f.kind !== 'date');
+    setFilters(from || to ? [...rest, { kind: 'date', from, to, source: 'user' }] : rest);
+  };
 
   const startRename = (qa: QuickAction, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -162,6 +175,8 @@ export const FilterBar: React.FC = () => {
         showMatchToggle={false}
         onToggle={(id) => toggleFacetItem('place', id)}
       />
+
+      <DateRangePill from={dateFilter?.from} to={dateFilter?.to} onChange={setDateRange} />
 
       {/* Subtle Divider */}
       <div className="h-4 w-px bg-[var(--border)] mx-1 shrink-0" />
@@ -314,6 +329,14 @@ export const FilterBar: React.FC = () => {
         } else if (f.kind === 'folder') {
           label = `Folder: ${selectedFolderName ?? ''}`;
           tooltip = 'This folder and its subfolders';
+        } else if (f.kind === 'date') {
+          label =
+            f.from && f.to
+              ? `Date: ${formatDay(f.from)} – ${formatDay(f.to)}`
+              : f.from
+                ? `Date: from ${formatDay(f.from)}`
+                : `Date: until ${formatDay(f.to ?? '')}`;
+          tooltip = 'Capture date, both days included';
         }
 
         return (

@@ -216,10 +216,12 @@ def _date(conn, f: dict, scope: str) -> Match:
             raise QueryError(f"date must be YYYY-MM-DD, got {day!r}")
     if lo is not None and hi is not None and lo > hi:
         raise QueryError(f"date range starts after it ends: {lo} > {hi}")
-    # a file capture_date never ran on (ingested before the module existed) would silently drop out of the range
+    # a file capture_date never ran on (ingested before the module existed) would silently drop out of the range.
+    # a file with no runs at all is still being ingested: capture_date is written first once its modules finish
     unchecked, total = conn.execute(
-        "SELECT count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM runs r WHERE r.media_id = m.id "
-        "AND r.module = 'capture_date')), count(*) FROM media m").fetchone()
+        "SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM runs r WHERE r.media_id = m.id) "
+        "AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.media_id = m.id AND r.module = 'capture_date')), "
+        "count(*) FROM media m").fetchone()
     if unchecked:
         raise QueryError(f"{unchecked} of {total} files were never checked for a capture date. "
                          "run snapsort ingest --modules capture_date on their folders")

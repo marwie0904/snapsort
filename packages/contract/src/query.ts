@@ -65,6 +65,15 @@ export const FolderFilterSchema = z.object({
 });
 export type FolderFilter = z.infer<typeof FolderFilterSchema>;
 
+/** Capture date range, both days included, as YYYY-MM-DD. Files without a capture date never match. */
+export const DateFilterSchema = z.object({
+  kind: z.literal('date'),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  source: SourceSchema,
+});
+export type DateFilter = z.infer<typeof DateFilterSchema>;
+
 export const FilterSchema = z.discriminatedUnion('kind', [
   PersonFilterSchema,
   LabelFilterSchema,
@@ -72,6 +81,7 @@ export const FilterSchema = z.discriminatedUnion('kind', [
   PlaceFilterSchema,
   MediaKindFilterSchema,
   FolderFilterSchema,
+  DateFilterSchema,
 ]);
 export type Filter = z.infer<typeof FilterSchema>;
 
