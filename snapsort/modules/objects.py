@@ -1,17 +1,17 @@
-"""Object detection with Ultralytics YOLO11n."""
+"""Object detection with Ultralytics YOLO11m."""
 from pathlib import Path
 
 from ultralytics import YOLO
 
 from snapsort.contract import Frame, Module, Result
 
-MODEL = "yolo11n.pt"
+MODEL = "yolo11m.pt"
 CACHE = Path.home() / ".cache" / "snapsort"
 
 
 class Objects(Module):
     name = "objects"
-    version = "1"
+    version = "2"
 
     def setup(self) -> None:
         CACHE.mkdir(parents=True, exist_ok=True)
