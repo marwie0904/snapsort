@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
@@ -8,6 +8,7 @@ import { MediaGrid } from './components/MediaGrid';
 import { AskAiPanel } from './components/AskAiPanel';
 import { PeopleView } from './components/PeopleView';
 import { PersonDetailView } from './components/PersonDetailView';
+import { MediaDetailView } from './components/MediaDetailView';
 import { useUiStore } from './stores/useUiStore';
 import { MockSnapsortApi } from '@snapsort/mock';
 
@@ -23,8 +24,23 @@ function getApi() {
 
 export const App: React.FC = () => {
   const api = useMemo(() => getApi(), []);
-  const { getSearchQuery, view, aiPanelOpen, currentView, selectedPersonId } = useUiStore();
+  const {
+    getSearchQuery,
+    view,
+    aiPanelOpen,
+    currentView,
+    selectedPersonId,
+    selectedMediaId,
+    openMediaDetail,
+    initThemeListener,
+  } = useUiStore();
   const searchQuery = getSearchQuery();
+
+  // Initialize OS theme change listener
+  useEffect(() => {
+    const cleanup = initThemeListener();
+    return cleanup;
+  }, [initThemeListener]);
 
   // Fetch Sidebar Counts
   const { data: counts } = useQuery({
@@ -48,7 +64,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-[#0F0F0F] text-[#F5F5F5] overflow-hidden">
+    <div className="flex h-screen w-screen bg-[var(--surface-0)] text-[var(--text)] overflow-hidden">
       {/* 1. Left Sidebar */}
       <Sidebar counts={counts} onAddFolder={handleAddFolder} />
 
@@ -59,7 +75,7 @@ export const App: React.FC = () => {
           <TopBar />
         </div>
 
-        {/* View Switcher: People View vs Person Detail vs Media Library */}
+        {/* View Switcher: People View vs Person Detail vs Media Detail vs Media Library */}
         {currentView === 'people' ? (
           <div className="flex-1 overflow-hidden flex flex-col pt-2">
             <PeopleView />
@@ -67,6 +83,10 @@ export const App: React.FC = () => {
         ) : currentView === 'person-detail' && selectedPersonId !== null ? (
           <div className="flex-1 overflow-hidden flex flex-col pt-2">
             <PersonDetailView personId={selectedPersonId} />
+          </div>
+        ) : currentView === 'media-detail' && selectedMediaId !== null ? (
+          <div className="flex-1 overflow-hidden flex flex-col pt-2">
+            <MediaDetailView items={items} />
           </div>
         ) : (
           <>
@@ -87,11 +107,15 @@ export const App: React.FC = () => {
             {/* Scrollable Media Grid Area */}
             <div className="flex-1 overflow-y-auto pt-2 px-2 -mx-2">
               {isLoading ? (
-                <div className="h-64 flex items-center justify-center text-xs text-[#666666]">
+                <div className="h-64 flex items-center justify-center text-xs text-[var(--text-muted)]">
                   Loading footage...
                 </div>
               ) : (
-                <MediaGrid items={items} viewMode={view} />
+                <MediaGrid
+                  items={items}
+                  viewMode={view}
+                  onItemClick={openMediaDetail}
+                />
               )}
             </div>
           </>

@@ -102,33 +102,33 @@ export const PeopleView: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col h-full overflow-y-auto px-1 select-none">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#222222]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--border)]">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#F5F5F5] flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--text)] flex items-center gap-2">
             <span>People & Faces</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#1C1C1C] text-[#888888] border border-[#2A2A2A] font-medium tabular-nums">
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[var(--surface-2)] text-[var(--text-muted)] border border-[var(--border)] font-medium tabular-nums">
               {people.length} clusters
             </span>
           </h1>
-          <p className="text-xs text-[#888888] mt-1">
+          <p className="text-xs text-[var(--text-muted)] mt-1">
             Local face clustering on Apple Silicon. Name faces to search by person or use with the AI assistant.
           </p>
         </div>
 
         {/* Search input */}
         <div className="relative w-full sm:w-64">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#666666]" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Find by name..."
-            className="w-full bg-[#181818] border border-[#2A2A2A] rounded-full pl-9 pr-4 py-1.5 text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFC400] transition-colors"
+            className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-full pl-9 pr-4 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-dim)] focus:outline-none focus:border-[var(--border-focus)] transition-colors"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888888] hover:text-[#FFFFFF]"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
             >
               <X size={12} />
             </button>
@@ -137,7 +137,7 @@ export const PeopleView: React.FC = () => {
       </div>
 
       {isLoading ? (
-        <div className="flex-1 flex items-center justify-center py-20 text-xs text-[#666666]">
+        <div className="flex-1 flex items-center justify-center py-20 text-xs text-[var(--text-muted)]">
           Loading face clusters...
         </div>
       ) : (
@@ -145,16 +145,16 @@ export const PeopleView: React.FC = () => {
           {/* SECTION 1: NAMED PEOPLE */}
           <section>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#888888] flex items-center gap-1.5">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
                 <span>Named People</span>
-                <span className="text-[11px] text-[#666666] font-normal tabular-nums">
+                <span className="text-[11px] text-[var(--text-dim)] font-normal tabular-nums">
                   ({namedPeople.length})
                 </span>
               </h2>
             </div>
 
             {namedPeople.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-[#141414] border border-[#222222] text-center text-xs text-[#666666]">
+              <div className="p-8 rounded-2xl bg-[var(--surface-1)] border border-[var(--border)] text-center text-xs text-[var(--text-muted)]">
                 {searchQuery
                   ? 'No named people matching your search.'
                   : 'No named people yet. Assign names to the unnamed faces below.'}
@@ -169,7 +169,7 @@ export const PeopleView: React.FC = () => {
                     <div
                       key={person.id}
                       onClick={() => !isEditing && navigateToPersonDetail(person.id)}
-                      className="group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[#141414] border border-[#222222] hover:border-[#383838] hover:bg-[#181818] transition-all cursor-pointer"
+                      className="group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--border-focus)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs"
                     >
                       {/* Top Corner Actions on Hover */}
                       <button
@@ -179,7 +179,7 @@ export const PeopleView: React.FC = () => {
                           filterByPersonAndNavigate(person.id);
                         }}
                         title={`Filter photos of ${person.name}`}
-                        className="absolute top-3 left-3 p-1 rounded-md text-[#666666] hover:text-[#FFC400] hover:bg-[#222222] opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-3 left-3 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <Filter size={12} />
                       </button>
@@ -188,7 +188,7 @@ export const PeopleView: React.FC = () => {
                         type="button"
                         onClick={(e) => startRename(person, e)}
                         title="Rename person"
-                        className="absolute top-3 right-3 p-1 rounded-md text-[#666666] hover:text-[#F5F5F5] hover:bg-[#222222] opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-3 right-3 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <Edit2 size={12} />
                       </button>
@@ -196,7 +196,7 @@ export const PeopleView: React.FC = () => {
                       {/* Avatar */}
                       <div className="relative mb-2.5">
                         <div
-                          className={`w-20 h-20 rounded-full bg-gradient-to-br ${gradient} border-2 border-[#2A2A2A] group-hover:border-[#FFC400] flex items-center justify-center shadow-lg transition-transform duration-200 group-hover:scale-105 overflow-hidden`}
+                          className={`w-20 h-20 rounded-full bg-gradient-to-br ${gradient} border-2 border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center shadow-md transition-transform duration-200 group-hover:scale-105 overflow-hidden`}
                         >
                           <span className="text-xl font-bold tracking-tight">
                             {person.name?.slice(0, 2).toUpperCase() || <User size={24} />}
@@ -217,12 +217,12 @@ export const PeopleView: React.FC = () => {
                             onKeyDown={(e) => handleKeyDown(person.id, e)}
                             onBlur={() => saveRename(person.id)}
                             autoFocus
-                            className="w-full max-w-[120px] bg-[#222222] border border-[#FFC400] rounded px-2 py-1 text-xs text-center text-[#F5F5F5] font-semibold focus:outline-none"
+                            className="w-full max-w-[120px] bg-[var(--surface-2)] border border-[var(--accent)] rounded px-2 py-1 text-xs text-center text-[var(--text)] font-semibold focus:outline-none"
                           />
                           <button
                             type="button"
                             onClick={() => saveRename(person.id)}
-                            className="p-1 text-[#FFC400] hover:text-[#FFFFFF]"
+                            className="p-1 text-[var(--accent)] hover:text-[var(--text)]"
                           >
                             <Check size={13} />
                           </button>
@@ -235,11 +235,11 @@ export const PeopleView: React.FC = () => {
                               startRename(person, e);
                             }}
                             title="Click to rename"
-                            className="text-sm font-bold text-[#F5F5F5] truncate mx-auto max-w-[130px] group-hover:text-[#FFC400] transition-colors cursor-text"
+                            className="text-sm font-bold text-[var(--text)] truncate mx-auto max-w-[130px] group-hover:text-[var(--accent)] transition-colors cursor-text"
                           >
                             {person.name}
                           </div>
-                          <div className="text-xs text-[#777777] font-medium tabular-nums mt-0.5">
+                          <div className="text-xs text-[var(--text-muted)] font-medium tabular-nums mt-0.5">
                             {person.count} items
                           </div>
                         </div>
@@ -254,17 +254,17 @@ export const PeopleView: React.FC = () => {
           {/* SECTION 2: UNNAMED FACES */}
           <section>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#888888] flex items-center gap-1.5">
-                <span className="text-[#FFC400]">✦</span>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+                <span className="text-[var(--accent)]">✦</span>
                 <span>Unnamed Faces</span>
-                <span className="text-[11px] text-[#666666] font-normal tabular-nums">
+                <span className="text-[11px] text-[var(--text-dim)] font-normal tabular-nums">
                   ({unnamedPeople.length})
                 </span>
               </h2>
             </div>
 
             {unnamedPeople.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-[#141414] border border-[#222222] text-center text-xs text-[#666666]">
+              <div className="p-8 rounded-2xl bg-[var(--surface-1)] border border-[var(--border)] text-center text-xs text-[var(--text-muted)]">
                 All detected faces have been named!
               </div>
             ) : (
@@ -276,10 +276,10 @@ export const PeopleView: React.FC = () => {
                     <div
                       key={person.id}
                       onClick={() => !isEditing && navigateToPersonDetail(person.id)}
-                      className="group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[#141414] border border-[#242424] hover:border-[#FFC400]/40 hover:bg-[#181818] transition-all cursor-pointer"
+                      className="group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs"
                     >
                       {/* Avatar */}
-                      <div className="w-20 h-20 rounded-full bg-[#1C1C1C] border-2 border-dashed border-[#3A3A3A] group-hover:border-[#FFC400] flex items-center justify-center text-[#888888] group-hover:text-[#FFC400] transition-colors shadow-lg mb-2.5">
+                      <div className="w-20 h-20 rounded-full bg-[var(--surface-2)] border-2 border-dashed border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors shadow-sm mb-2.5">
                         <User size={24} strokeWidth={1.5} />
                       </div>
 
@@ -297,12 +297,12 @@ export const PeopleView: React.FC = () => {
                             onBlur={() => saveRename(person.id)}
                             placeholder="Enter name..."
                             autoFocus
-                            className="w-full max-w-[120px] bg-[#222222] border border-[#FFC400] rounded px-2 py-1 text-xs text-center text-[#F5F5F5] font-semibold focus:outline-none placeholder-[#666666]"
+                            className="w-full max-w-[120px] bg-[var(--surface-2)] border border-[var(--accent)] rounded px-2 py-1 text-xs text-center text-[var(--text)] font-semibold focus:outline-none placeholder-[var(--text-dim)]"
                           />
                           <button
                             type="button"
                             onClick={() => saveRename(person.id)}
-                            className="p-1 text-[#FFC400] hover:text-[#FFFFFF]"
+                            className="p-1 text-[var(--accent)] hover:text-[var(--text)]"
                           >
                             <Check size={13} />
                           </button>
@@ -312,11 +312,11 @@ export const PeopleView: React.FC = () => {
                           <button
                             type="button"
                             onClick={(e) => startRename(person, e)}
-                            className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-[#262010] text-[#FFC400] border border-[#443810] hover:bg-[#FFC400] hover:text-[#111111] transition-all shadow-sm"
+                            className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all shadow-xs"
                           >
                             <span>+ Add Name</span>
                           </button>
-                          <span className="text-xs text-[#666666] font-medium tabular-nums mt-1">
+                          <span className="text-xs text-[var(--text-muted)] font-medium tabular-nums mt-1">
                             {person.count} items
                           </span>
                         </div>

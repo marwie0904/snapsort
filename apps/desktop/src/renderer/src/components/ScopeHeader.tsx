@@ -36,23 +36,23 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
     <div className="flex flex-wrap items-end justify-between gap-3 pt-4 pb-2">
       <div className="min-w-40">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold tracking-tight text-[#F5F5F5]">{title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--text)]">{title}</h1>
           {selectedFolderDrive && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-[#222222] text-[#FFC400] border border-[#333333]">
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-[var(--surface-2)] text-[var(--accent)] border border-[var(--border)]">
               {selectedFolderDrive}
             </span>
           )}
           {selectedFolderName && (
             <button
               onClick={clearSelectedFolder}
-              className="text-[11px] text-[#888888] hover:text-[#FFC400] transition-colors ml-1"
+              className="text-[11px] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors ml-1"
               title="Return to library footage"
             >
               ✕ Clear
             </button>
           )}
         </div>
-        <p className="text-xs text-[#777777] mt-1 tabular-nums">
+        <p className="text-xs text-[var(--text-muted)] mt-1 tabular-nums">
           {total} items · {clipsCount} clips · {photosCount} photos
         </p>
       </div>
@@ -62,7 +62,7 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
         <button
           onClick={() => setView(view === 'highlight' ? 'filter' : 'highlight')}
           title="Toggle between hiding non-matches and highlighting them"
-          className="px-3 py-1.5 rounded-full text-xs font-medium border border-[#282828] bg-[#181818] text-[#888888] hover:text-[#E5E5E5] transition-colors"
+          className="px-3 py-1.5 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-focus)] transition-colors"
         >
           {view === 'highlight' ? 'Mode: Highlight' : 'Mode: Filter only'}
         </button>
@@ -73,9 +73,9 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
             const next = sort === 'newest' ? 'oldest' : sort === 'oldest' ? 'name' : 'newest';
             setSort(next);
           }}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#181818] border border-[#282828] hover:border-[#444444] rounded-full text-xs font-semibold text-[#E5E5E5] transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition-colors"
         >
-          <ArrowUpDown size={12} className="text-[#888888]" />
+          <ArrowUpDown size={12} className="text-[var(--text-muted)]" />
           <span>
             Sort: {sort === 'newest' ? 'Newest first' : sort === 'oldest' ? 'Oldest first' : 'Name'}
           </span>

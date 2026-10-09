@@ -35,16 +35,16 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
           >
             {/* Card Thumbnail Container */}
             <div
-              className={`relative aspect-[16/10] rounded-xl bg-[#202020] overflow-hidden transition-all duration-150 ${
+              className={`relative aspect-[16/10] rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] shadow-xs overflow-hidden transition-all duration-150 ${
                 showYellowRing
-                  ? 'ring-2 ring-[#FFC400] ring-offset-2 ring-offset-[#0F0F0F]'
-                  : 'hover:ring-1 hover:ring-[#444444]'
+                  ? 'ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--ring-offset)]'
+                  : 'hover:ring-1 hover:ring-[var(--border-focus)]'
               }`}
             >
               {/* Media Preview Image / Placeholder */}
-              <div className="w-full h-full bg-gradient-to-br from-[#262626] to-[#1E1E1E] flex items-center justify-center">
+              <div className="w-full h-full bg-[var(--surface-2)] flex items-center justify-center">
                 {/* Fallback pattern */}
-                <div className="w-8 h-8 rounded-lg bg-[#2A2A2A]/40" />
+                <div className="w-8 h-8 rounded-lg bg-[var(--surface-3)]/70" />
               </div>
 
               {/* Video Duration Badge */}
@@ -57,7 +57,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
 
             {/* Caption Line */}
             <div className="mt-2 px-0.5">
-              <span className="text-[11px] text-[#777777] font-medium leading-tight">
+              <span className="text-[11px] text-[var(--text-muted)] group-hover:text-[var(--text)] font-medium leading-tight transition-colors">
                 {item.name} · {item.faceCount} {item.faceCount === 1 ? 'person' : 'people'}
               </span>
             </div>

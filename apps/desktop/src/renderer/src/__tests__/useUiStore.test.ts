@@ -119,5 +119,133 @@ describe('useUiStore Quick Actions', () => {
       expect(personFilter.ids).toEqual([6]);
     }
   });
+
+  it('handles media preview navigation and playback state', () => {
+    // Open media detail
+    useUiStore.getState().openMediaDetail(4);
+    expect(useUiStore.getState().currentView).toBe('media-detail');
+    expect(useUiStore.getState().selectedMediaId).toBe(4);
+    expect(useUiStore.getState().currentMediaTimestamp).toBe(0);
+    expect(useUiStore.getState().isPlaying).toBe(false);
+
+    // Seek timestamp
+    useUiStore.getState().seekToTimestamp(12);
+    expect(useUiStore.getState().currentMediaTimestamp).toBe(12);
+
+    // Playback toggle
+    useUiStore.getState().togglePlayPause();
+    expect(useUiStore.getState().isPlaying).toBe(true);
+
+    // Toggle detections
+    useUiStore.getState().setShowDetections(false);
+    expect(useUiStore.getState().showDetections).toBe(false);
+
+    // Next / Prev navigation
+    const items = [{ id: 1 }, { id: 4 }, { id: 6 }];
+    useUiStore.getState().nextMedia(items);
+    expect(useUiStore.getState().selectedMediaId).toBe(6);
+
+    useUiStore.getState().prevMedia(items);
+    expect(useUiStore.getState().selectedMediaId).toBe(4);
+
+    // Close detail returns to library
+    useUiStore.getState().closeMediaDetail();
+    expect(useUiStore.getState().currentView).toBe('library');
+    expect(useUiStore.getState().selectedMediaId).toBeNull();
+  });
+
+  describe('Theme Management', () => {
+    const storageMap = new Map<string, string>();
+    const mockLocalStorage = {
+      getItem: (key: string) => storageMap.get(key) ?? null,
+      setItem: (key: string, val: string) => storageMap.set(key, val),
+      removeItem: (key: string) => storageMap.delete(key),
+      clear: () => storageMap.clear(),
+    };
+
+    const mockClassList = {
+      classes: new Set<string>(),
+      add: (cls: string) => mockClassList.classes.add(cls),
+      remove: (cls: string) => mockClassList.classes.delete(cls),
+      contains: (cls: string) => mockClassList.classes.has(cls),
+    };
+
+    const mockAttributes = new Map<string, string>();
+    const mockDocument = {
+      documentElement: {
+        setAttribute: (attr: string, val: string) => mockAttributes.set(attr, val),
+        getAttribute: (attr: string) => mockAttributes.get(attr) ?? null,
+        classList: mockClassList,
+      },
+    };
+
+    beforeEach(() => {
+      storageMap.clear();
+      mockClassList.classes.clear();
+      mockAttributes.clear();
+
+      (globalThis as any).localStorage = mockLocalStorage;
+      (globalThis as any).window = {
+        localStorage: mockLocalStorage,
+        matchMedia: (query: string) => ({
+          matches: false,
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }),
+      };
+      (globalThis as any).document = mockDocument;
+
+      useUiStore.getState().setThemePreference('system');
+    });
+
+    it('defaults to system theme preference and computes effective theme', () => {
+      const state = useUiStore.getState();
+      expect(state.themePreference).toBe('system');
+      expect(['light', 'dark']).toContain(state.effectiveTheme);
+    });
+
+    it('sets theme preference to light and updates DOM attributes', () => {
+      useUiStore.getState().setThemePreference('light');
+      const state = useUiStore.getState();
+      expect(state.themePreference).toBe('light');
+      expect(state.effectiveTheme).toBe('light');
+      expect(mockLocalStorage.getItem('snapsort-theme-preference')).toBe('light');
+      expect(mockDocument.documentElement.getAttribute('data-theme')).toBe('light');
+      expect(mockDocument.documentElement.classList.contains('light')).toBe(true);
+      expect(mockDocument.documentElement.classList.contains('dark')).toBe(false);
+    });
+
+    it('sets theme preference to dark and updates DOM attributes', () => {
+      useUiStore.getState().setThemePreference('dark');
+      const state = useUiStore.getState();
+      expect(state.themePreference).toBe('dark');
+      expect(state.effectiveTheme).toBe('dark');
+      expect(mockLocalStorage.getItem('snapsort-theme-preference')).toBe('dark');
+      expect(mockDocument.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(mockDocument.documentElement.classList.contains('dark')).toBe(true);
+      expect(mockDocument.documentElement.classList.contains('light')).toBe(false);
+    });
+
+    it('cycles through system -> dark -> light -> system', () => {
+      useUiStore.getState().setThemePreference('system');
+      expect(useUiStore.getState().themePreference).toBe('system');
+
+      useUiStore.getState().cycleTheme();
+      expect(useUiStore.getState().themePreference).toBe('dark');
+
+      useUiStore.getState().cycleTheme();
+      expect(useUiStore.getState().themePreference).toBe('light');
+
+      useUiStore.getState().cycleTheme();
+      expect(useUiStore.getState().themePreference).toBe('system');
+    });
+
+    it('initializes theme listener and returns cleanup function', () => {
+      const cleanup = useUiStore.getState().initThemeListener();
+      expect(typeof cleanup).toBe('function');
+      cleanup();
+    });
+  });
 });
 

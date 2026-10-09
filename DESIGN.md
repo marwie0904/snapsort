@@ -84,24 +84,79 @@ Snapsort uses an elevation model built with subtle luminance steps:
 
 ---
 
-## 4. Logo & Wordmark Assets
+## 4. Logo, Icon & Wordmark Assets
 
-The Snapsort brand features two primary logotype expressions:
+The official Snapsort brand assets are located in the repository [`assets/`](file:///c:/Users/Nitro%20V15/Documents/GitHub/snapsort/assets) directory. All UI implementations, build packaging, and documentation derive from these authoritative source files.
 
-### 4.1 Variant A: Dot Wordmark (`snapsort.`)
-Used in navigation bars, headers, and standard horizontal branding. The letters are crisp off-white with a signature `#FFC400` dot.
+### 4.1 Canonical Asset Specifications
 
-```html
-<div class="inline-flex items-baseline font-bold tracking-tight text-[#F5F5F5] text-2xl select-none">
-  <span>snapsort</span>
-  <span class="text-[#FFC400] text-[1.25em] leading-none ml-[1.5px]">.</span>
-</div>
+| Asset File | Native Resolution | Aspect Ratio | Surface Target | Palette & Structure |
+|---|---|---|---|---|
+| [`assets/wordmark-light.png`](file:///c:/Users/Nitro%20V15/Documents/GitHub/snapsort/assets/wordmark-light.png) | `1094 × 275` px | ~3.98 : 1 | Dark / Obsidian (`#0F0F0F`, `#141414`, `#1C1C1C`) | Crisp `#F5F5F5` lettering with signature `#FFC400` aperture viewfinder bracket "o" |
+| [`assets/wordmark.png`](file:///c:/Users/Nitro%20V15/Documents/GitHub/snapsort/assets/wordmark.png) | `1094 × 275` px | ~3.98 : 1 | Light / Canvas (`#FFFFFF`, `#F9F9F9`, `#ECECEC`) | Solid `#111111` lettering with signature `#FFC400` aperture viewfinder bracket "o" |
+| [`assets/icon.png`](file:///c:/Users/Nitro%20V15/Documents/GitHub/snapsort/assets/icon.png) | `384 × 368` px | ~1.04 : 1 (Squircle) | App Dock, Window Title, Favicon, Packaging | Deep obsidian rounded squircle enclosing the 4 `#FFC400` viewfinder focus brackets |
+
+---
+
+### 4.2 UI Component Implementation (`@snapsort/ui`)
+
+The UI component package (`packages/ui`) exposes two first-class branding components: `<Wordmark />` and `<AppIcon />`.
+
+#### 4.2.1 `<Wordmark />` Component
+The `<Wordmark />` component dynamically resolves the active theme and renders the appropriate official asset without visual degradation or stretching:
+
+- **Theme-aware Switching (Default `auto`):**
+  Uses CSS classes (`hidden dark:block` and `block dark:hidden`) to switch between `wordmark-light.png` and `wordmark.png` instantly without layout shifts during theme toggling.
+- **Explicit Theme Override:**
+  Accepts `theme="dark"` or `theme="light"` to pin the wordmark to a specific surface context.
+- **Sizing Presets:**
+  - `sm`: `h-5` (20px height, 80px width) — Compact toolbars and sub-headers.
+  - `md`: `h-[26px]` (26px height, 104px width) — **Default**: primary sidebar header.
+  - `lg`: `h-8` (32px height, 128px width) — Modals, splash screens, and hero sections.
+  - `number`: Custom height in pixels, automatically calculating width via `Math.round((height * 1094) / 275)`.
+
+```tsx
+import { Wordmark } from '@snapsort/ui';
+
+// Default theme-aware wordmark in sidebar
+<Wordmark size="md" />
+
+// Forced dark-mode wordmark on obsidian background
+<Wordmark theme="dark" size="lg" />
 ```
 
-### 4.2 Variant B: Bracket Mark (`snaps[ ]rt`) & Icon Glyph
-The "o" in snapsort is formed by an aperture-style bracket viewfinder icon.
+#### 4.2.2 `<AppIcon />` Component
+Provides the official squircle app icon for in-app surfaces (e.g. About dialog, update banners, collapsed drawers):
 
-#### Standalone Bracket Mark SVG (`size: 24` or scalable):
+- **Sizing Presets:**
+  - `sm`: `20px` (`w-5 h-5`)
+  - `md`: `28px` (`w-7 h-7`) — Default
+  - `lg`: `40px` (`w-10 h-10`)
+  - `number`: Custom pixel dimension maintaining the 384:368 squircle geometry.
+
+```tsx
+import { AppIcon } from '@snapsort/ui';
+
+// Standard 28px squircle icon
+<AppIcon size="md" />
+```
+
+---
+
+### 4.3 System & OS Touchpoint Integration
+
+The canonical `assets/icon.png` is distributed across all operating system and runtime touchpoints:
+
+1. **Electron Window Icon**: Loaded during `createWindow()` in `apps/desktop/src/main/index.ts` from `apps/desktop/build/icon.png` (with fallback to `assets/icon.png`).
+2. **Application Packaging**: Referenced in `apps/desktop/electron-builder.yml` (`mac.icon` and `win.icon` pointing to `build/icon.png`) for building DMG, NSIS, and portable bundles.
+3. **Web & Browser Favicon**: Placed at `apps/desktop/src/renderer/public/icon.png` and linked in `apps/desktop/src/renderer/index.html` (`<link rel="icon" type="image/png" href="/icon.png" />`).
+
+---
+
+### 4.4 Viewfinder Aperture Bracket Vector Reference (`BracketMark`)
+
+For lightweight standalone vector accents or dynamic SVG color overlays, the 4-bracket viewfinder glyph is maintained as an SVG reference:
+
 ```svg
 <svg width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Top Left Bracket -->
@@ -115,19 +170,6 @@ The "o" in snapsort is formed by an aperture-style bracket viewfinder icon.
 </svg>
 ```
 
-#### Bracket Wordmark Inline HTML:
-```html
-<div class="inline-flex items-center gap-1 font-black tracking-tight text-[#F5F5F5] text-2xl select-none">
-  <span>snaps</span>
-  <svg class="mx-0.5 inline-block" width="22" height="22" viewBox="0 0 100 100" fill="none">
-    <path d="M15 45 C15 25 25 15 45 15 C48 15 50 17 50 20 C50 23 48 25 45 25 C32 25 25 32 25 45 C25 48 23 50 20 50 C17 50 15 48 15 45 Z" fill="#FFC400" />
-    <path d="M85 45 C85 25 75 15 55 15 C52 15 50 17 50 20 C50 23 52 25 55 25 C68 25 75 32 75 45 C75 48 77 50 80 50 C83 50 85 48 85 45 Z" fill="#FFC400" />
-    <path d="M15 55 C15 75 25 85 45 85 C48 85 50 83 50 80 C50 77 48 75 45 75 C32 75 25 68 25 55 C25 52 23 50 20 50 C17 50 15 52 15 55 Z" fill="#FFC400" />
-    <path d="M85 55 C85 75 75 85 55 85 C52 85 50 83 50 80 C50 77 52 75 55 75 C68 75 75 68 75 55 C75 52 77 50 80 50 C83 50 85 52 85 55 Z" fill="#FFC400" />
-  </svg>
-  <span>rt</span>
-</div>
-```
 
 ---
 

@@ -13,10 +13,9 @@ import {
   PanelLeftClose,
   Users,
 } from 'lucide-react';
-import { Button } from '@snapsort/ui';
+import { Button, Wordmark, ThemeSegmentedControl } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
 import { mockLocalFolders, mockExternalDrive } from '@snapsort/mock';
-import wordmarkImg from '../assets/wordmark.png';
 
 const EjectIcon: React.FC<{ size?: number; className?: string }> = ({ size = 12, className = '' }) => (
   <svg
@@ -64,6 +63,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     currentView,
     navigateToPeople,
     navigateToLibrary,
+    themePreference,
+    setThemePreference,
   } = useUiStore();
 
   const [driveExpanded, setDriveExpanded] = useState(true);
@@ -97,7 +98,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      className={`h-full bg-[#141414] border-r border-[#222222] flex flex-col justify-between select-none text-sm transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${
+      className={`h-full bg-[var(--surface-1)] border-r border-[var(--border)] flex flex-col justify-between select-none text-sm transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${
         sidebarOpen
           ? 'w-64 min-w-64 p-5 opacity-100'
           : 'w-0 min-w-0 p-0 border-r-0 opacity-0 pointer-events-none'
@@ -107,24 +108,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="space-y-5 overflow-y-auto pr-1">
         {/* Wordmark logo & Collapse button */}
         <div className="pt-1 flex items-center justify-between">
-          <img
-            src={wordmarkImg}
-            alt="snapsort"
-            className="h-7 w-auto object-contain select-none"
-            draggable={false}
-          />
+          <Wordmark size="md" />
           <button
             type="button"
             onClick={toggleSidebar}
             title="Collapse sidebar"
-            className="p-1.5 rounded-lg text-[#888888] hover:text-[#F5F5F5] hover:bg-[#222222] transition-colors"
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors"
           >
             <PanelLeftClose size={16} />
           </button>
         </div>
 
         {/* Tab Switcher: Library | Folders */}
-        <div className="flex p-1 bg-[#1A1A1A] border border-[#262626] rounded-xl text-xs font-semibold">
+        <div className="flex p-1 bg-[var(--surface-2)] border border-[var(--border)] rounded-xl text-xs font-semibold">
           <button
             type="button"
             onClick={() => {
@@ -133,8 +129,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }}
             className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
               activeTab === 'library'
-                ? 'bg-[#2A2A2A] text-[#F5F5F5] shadow-sm'
-                : 'text-[#888888] hover:text-[#D5D5D5]'
+                ? 'bg-[var(--surface-1)] text-[var(--text)] shadow-xs font-semibold border border-[var(--border-subtle)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text)]'
             }`}
           >
             <Layers size={13} />
@@ -145,8 +141,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => setActiveTab('folders')}
             className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
               activeTab === 'folders'
-                ? 'bg-[#2A2A2A] text-[#F5F5F5] shadow-sm'
-                : 'text-[#888888] hover:text-[#D5D5D5]'
+                ? 'bg-[var(--surface-1)] text-[var(--text)] shadow-xs font-semibold border border-[var(--border-subtle)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text)]'
             }`}
           >
             <Folder size={13} />
@@ -158,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {activeTab === 'library' && (
           <nav className="space-y-6 pt-1">
             <div>
-              <div className="text-[11px] font-bold tracking-wider text-[#666666] uppercase mb-2">
+              <div className="text-[11px] font-bold tracking-wider text-[var(--text-muted)] uppercase mb-2">
                 Library
               </div>
               <div className="space-y-0.5">
@@ -170,15 +166,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                     currentView === 'library' && scope === 'all' && !selectedFolderId
-                      ? 'bg-[#222222] text-[#F5F5F5]'
-                      : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
+                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Film size={14} className="text-[#888888]" />
+                    <Film size={14} className="text-[var(--text-muted)]" />
                     <span>All footage</span>
                   </div>
-                  <span className="tabular-nums text-[#888888] font-normal">{counts.all}</span>
+                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.all}</span>
                 </button>
                 <button
                   onClick={() => {
@@ -188,15 +184,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                     currentView === 'library' && scope === 'images' && !selectedFolderId
-                      ? 'bg-[#222222] text-[#F5F5F5]'
-                      : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
+                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Image size={14} className="text-[#888888]" />
+                    <Image size={14} className="text-[var(--text-muted)]" />
                     <span>Photos</span>
                   </div>
-                  <span className="tabular-nums text-[#888888] font-normal">{counts.images}</span>
+                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.images}</span>
                 </button>
                 <button
                   onClick={() => {
@@ -206,15 +202,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                     currentView === 'library' && scope === 'videos' && !selectedFolderId
-                      ? 'bg-[#222222] text-[#F5F5F5]'
-                      : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
+                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Film size={14} className="text-[#888888]" />
+                    <Film size={14} className="text-[var(--text-muted)]" />
                     <span>Videos</span>
                   </div>
-                  <span className="tabular-nums text-[#888888] font-normal">{counts.videos}</span>
+                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.videos}</span>
                 </button>
                 <button
                   onClick={() => {
@@ -223,8 +219,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                     (currentView === 'people' || currentView === 'person-detail') && !selectedFolderId
-                      ? 'bg-[#222222] text-[#F5F5F5]'
-                      : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
+                      ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -232,13 +228,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       size={14}
                       className={
                         (currentView === 'people' || currentView === 'person-detail') && !selectedFolderId
-                          ? 'text-[#FFC400]'
-                          : 'text-[#888888]'
+                          ? 'text-[var(--accent)]'
+                          : 'text-[var(--text-muted)]'
                       }
                     />
                     <span>People & Faces</span>
                   </div>
-                  <span className="tabular-nums text-[#888888] font-normal">{counts.people}</span>
+                  <span className="tabular-nums text-[var(--text-muted)] font-normal">{counts.people}</span>
                 </button>
               </div>
             </div>
@@ -261,19 +257,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Notification toast if ejected */}
             {ejectFeedback && (
-              <div className="bg-[#242010] border border-[#443810] text-[#FFC400] text-xs px-3 py-2 rounded-lg">
+              <div className="bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] text-xs px-3 py-2 rounded-lg font-medium">
                 {ejectFeedback}
               </div>
             )}
 
             {/* Section 1: ON THIS DEVICE */}
             <div>
-              <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[#666666] uppercase mb-2">
+              <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[var(--text-muted)] uppercase mb-2">
                 <div className="flex items-center gap-1.5">
-                  <Laptop size={12} className="text-[#777777]" />
+                  <Laptop size={12} className="text-[var(--text-muted)]" />
                   <span>On this device</span>
                 </div>
-                <span className="text-[10px] text-[#555555] font-normal">
+                <span className="text-[10px] text-[var(--text-dim)] font-normal">
                   {mockLocalFolders.length} folders
                 </span>
               </div>
@@ -286,19 +282,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onClick={() => selectFolder(folder.id, folder.name, 'On this device')}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                         isSelected
-                          ? 'bg-[#222222] text-[#F5F5F5]'
-                          : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
+                          ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
                         {isSelected ? (
-                          <FolderOpen size={14} className="text-[#FFC400] shrink-0" />
+                          <FolderOpen size={14} className="text-[var(--accent)] shrink-0" />
                         ) : (
-                          <Folder size={14} className="text-[#777777] shrink-0" />
+                          <Folder size={14} className="text-[var(--text-muted)] shrink-0" />
                         )}
                         <span className="truncate">{folder.name}</span>
                       </div>
-                      <span className="tabular-nums text-[#666666] font-normal text-[11px] ml-2 shrink-0">
+                      <span className="tabular-nums text-[var(--text-muted)] font-normal text-[11px] ml-2 shrink-0">
                         Local
                       </span>
                     </button>
@@ -309,17 +305,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Section 2: CONNECTED DRIVES */}
             <div>
-              <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[#666666] uppercase mb-2">
+              <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[var(--text-muted)] uppercase mb-2">
                 <div className="flex items-center gap-1.5">
-                  <Usb size={12} className="text-[#FFC400]" />
+                  <Usb size={12} className="text-[var(--accent)]" />
                   <span>External Drives</span>
                 </div>
                 {!isDriveEjected ? (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#26261A] text-[#FFC400] border border-[#3A361A]">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
                     1 active
                   </span>
                 ) : (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#222222] text-[#777777]">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[var(--surface-2)] text-[var(--text-dim)]">
                     0 active
                   </span>
                 )}
@@ -327,19 +323,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {/* Mock Drive Card */}
               {!isDriveEjected ? (
-                <div className="bg-[#181818] border border-[#262626] rounded-xl overflow-hidden">
+                <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-xl overflow-hidden shadow-xs">
                   {/* Drive Header */}
                   <div
                     onClick={() => setDriveExpanded(!driveExpanded)}
-                    className="p-3 cursor-pointer hover:bg-[#202020] transition-colors flex items-center justify-between"
+                    className="p-3 cursor-pointer hover:bg-[var(--surface-3)]/50 transition-colors flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <HardDrive size={15} className="text-[#FFC400] shrink-0" />
+                      <HardDrive size={15} className="text-[var(--accent)] shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-[#F5F5F5] truncate">
+                        <div className="text-xs font-bold text-[var(--text)] truncate">
                           {mockExternalDrive.name}
                         </div>
-                        <div className="text-[10px] text-[#777777] truncate">
+                        <div className="text-[10px] text-[var(--text-muted)] truncate">
                           {mockExternalDrive.type} · {mockExternalDrive.capacity}
                         </div>
                       </div>
@@ -349,13 +345,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         type="button"
                         onClick={handleEjectDrive}
                         title="Eject external drive"
-                        className="p-1 rounded text-[#777777] hover:text-[#F5F5F5] hover:bg-[#2A2A2A] transition-colors"
+                        className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors"
                       >
                         <EjectIcon size={12} />
                       </button>
                       <button
                         type="button"
-                        className="p-0.5 text-[#777777]"
+                        className="p-0.5 text-[var(--text-muted)]"
                         title={driveExpanded ? 'Collapse drive' : 'Expand drive'}
                       >
                         {driveExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -365,13 +361,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   {/* Drive Capacity Meter */}
                   <div className="px-3 pb-2.5 pt-0.5">
-                    <div className="w-full bg-[#262626] h-1.5 rounded-full overflow-hidden">
+                    <div className="w-full bg-[var(--surface-3)] h-1.5 rounded-full overflow-hidden">
                       <div
-                        className="bg-[#FFC400] h-full rounded-full transition-all"
+                        className="bg-[var(--accent)] h-full rounded-full transition-all"
                         style={{ width: `${mockExternalDrive.usedPercent}%` }}
                       />
                     </div>
-                    <div className="flex justify-between items-center text-[10px] text-[#666666] mt-1.5">
+                    <div className="flex justify-between items-center text-[10px] text-[var(--text-muted)] mt-1.5">
                       <span>{mockExternalDrive.used} used</span>
                       <span>{mockExternalDrive.free} free</span>
                     </div>
@@ -379,7 +375,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   {/* Drive Folders List */}
                   {driveExpanded && (
-                    <div className="border-t border-[#222222] bg-[#141414] py-1">
+                    <div className="border-t border-[var(--border)] bg-[var(--surface-1)] py-1">
                       {mockExternalDrive.folders.map((folder) => {
                         const isSelected = selectedFolderId === folder.id;
                         return (
@@ -390,19 +386,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             }
                             className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold transition-colors ${
                               isSelected
-                                ? 'bg-[#222222] text-[#F5F5F5]'
-                                : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
+                                ? 'bg-[var(--surface-2)] text-[var(--text)] font-bold'
+                                : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/50'
                             }`}
                           >
                             <div className="flex items-center gap-2 truncate">
                               {isSelected ? (
-                                <FolderOpen size={13} className="text-[#FFC400] shrink-0" />
+                                <FolderOpen size={13} className="text-[var(--accent)] shrink-0" />
                               ) : (
-                                <Folder size={13} className="text-[#666666] shrink-0" />
+                                <Folder size={13} className="text-[var(--text-muted)] shrink-0" />
                               )}
                               <span className="truncate">{folder.name}</span>
                             </div>
-                            <span className="tabular-nums text-[#666666] font-normal text-[10px] ml-2 shrink-0">
+                            <span className="tabular-nums text-[var(--text-muted)] font-normal text-[10px] ml-2 shrink-0">
                               Ext
                             </span>
                           </button>
@@ -412,11 +408,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="p-3 rounded-xl border border-dashed border-[#282828] text-center space-y-2">
-                  <p className="text-xs text-[#666666]">No external drives connected</p>
+                <div className="p-3 rounded-xl border border-dashed border-[var(--border)] text-center space-y-2">
+                  <p className="text-xs text-[var(--text-muted)]">No external drives connected</p>
                   <button
                     onClick={handleRemountDrive}
-                    className="text-[11px] text-[#FFC400] hover:underline font-medium"
+                    className="text-[11px] text-[var(--accent)] hover:underline font-medium"
                   >
                     Simulate re-inserting SanDisk SSD
                   </button>
@@ -427,15 +423,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Footer Note */}
-      <div className="pt-4 border-t border-[#222222] text-[11px] text-[#666666] leading-tight flex items-center justify-between">
-        {activeTab === 'library' ? (
-          <span>Local library · runs on this device</span>
-        ) : (
-          <span>
-            {!isDriveEjected ? '1 external drive mounted' : '0 external drives mounted'}
-          </span>
-        )}
+      {/* Footer Area: Appearance Switcher & Note */}
+      <div className="pt-4 border-t border-[var(--border)] space-y-3">
+        <div className="flex flex-col gap-1.5">
+          <div className="text-[10px] font-bold tracking-wider text-[var(--text-muted)] uppercase">
+            Appearance
+          </div>
+          <ThemeSegmentedControl
+            value={themePreference}
+            onChange={setThemePreference}
+            className="w-full"
+          />
+        </div>
+        <div className="text-[11px] text-[var(--text-muted)] leading-tight flex items-center justify-between pt-1">
+          {activeTab === 'library' ? (
+            <span>Local library · runs on this device</span>
+          ) : (
+            <span>
+              {!isDriveEjected ? '1 external drive mounted' : '0 external drives mounted'}
+            </span>
+          )}
+        </div>
       </div>
     </aside>
   );

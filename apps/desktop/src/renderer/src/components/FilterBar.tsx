@@ -107,11 +107,11 @@ export const FilterBar: React.FC = () => {
           tabIndex={0}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
             activePersonIds.length > 0 || peoplePopoverOpen
-              ? 'bg-[#FFC400] text-[#111111] font-semibold shadow-sm'
-              : 'bg-[#1C1C1C] text-[#F5F5F5] border border-[#2A2A2A] hover:border-[#8A8A8A]'
+              ? 'bg-[var(--accent)] text-[var(--accent-ink)] font-semibold shadow-xs'
+              : 'bg-[var(--surface-2)] text-[var(--text)] border border-[var(--border)] hover:border-[var(--border-focus)]'
           }`}
         >
-          <Users size={12} className={activePersonIds.length > 0 ? 'text-[#111111]' : 'text-[#888888]'} />
+          <Users size={12} className={activePersonIds.length > 0 ? 'text-[var(--accent-ink)]' : 'text-[var(--text-muted)]'} />
           <span>People</span>
           {activePersonIds.length > 0 && (
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/15 text-black tabular-nums">
@@ -123,10 +123,10 @@ export const FilterBar: React.FC = () => {
 
         {/* Dropdown Popover */}
         {peoplePopoverOpen && (
-          <div className="absolute top-full left-0 mt-2 w-64 bg-[#181818] border border-[#2E2E2E] rounded-2xl shadow-2xl p-2 z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
-            <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-[#242424] text-[11px] font-bold text-[#888888] uppercase tracking-wider">
+          <div className="absolute top-full left-0 mt-2 w-64 bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl shadow-dropdown p-2 z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
+            <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-[var(--border)] text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
               <span>Select People</span>
-              <span className="text-[#666666] font-normal tabular-nums">{people.length} total</span>
+              <span className="text-[var(--text-dim)] font-normal tabular-nums">{people.length} total</span>
             </div>
 
             <div className="max-h-56 overflow-y-auto py-1 space-y-0.5">
@@ -136,19 +136,19 @@ export const FilterBar: React.FC = () => {
                   <div
                     key={p.id}
                     onClick={() => togglePersonFilter(p.id)}
-                    className="flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#222222] cursor-pointer text-[#D5D5D5] transition-colors"
+                    className="flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[var(--surface-3)]/60 cursor-pointer text-[var(--text)] transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {isSelected ? (
-                        <CheckSquare size={13} className="text-[#FFC400] shrink-0" />
+                        <CheckSquare size={13} className="text-[var(--accent)] shrink-0" />
                       ) : (
-                        <Square size={13} className="text-[#666666] shrink-0" />
+                        <Square size={13} className="text-[var(--text-dim)] shrink-0" />
                       )}
-                      <span className={`truncate text-xs ${isSelected ? 'text-[#F5F5F5] font-semibold' : ''}`}>
+                      <span className={`truncate text-xs ${isSelected ? 'text-[var(--text)] font-semibold' : 'text-[var(--text-muted)]'}`}>
                         {p.name}
                       </span>
                     </div>
-                    <span className="text-[10px] text-[#777777] font-medium tabular-nums shrink-0 ml-2">
+                    <span className="text-[10px] text-[var(--text-dim)] font-medium tabular-nums shrink-0 ml-2">
                       {p.count}
                     </span>
                   </div>
@@ -157,14 +157,14 @@ export const FilterBar: React.FC = () => {
             </div>
 
             {/* Link to full People & Faces view */}
-            <div className="pt-1.5 mt-1 border-t border-[#242424]">
+            <div className="pt-1.5 mt-1 border-t border-[var(--border)]">
               <button
                 type="button"
                 onClick={() => {
                   setPeoplePopoverOpen(false);
                   navigateToPeople();
                 }}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold text-[#FFC400] hover:bg-[#222222] transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold text-[var(--accent)] hover:bg-[var(--surface-3)]/60 transition-colors"
               >
                 <span>Manage all faces</span>
                 <ArrowUpRight size={12} />
@@ -178,7 +178,7 @@ export const FilterBar: React.FC = () => {
       <FilterPill label="Tags" />
 
       {/* Subtle Divider */}
-      <div className="h-4 w-px bg-[#282828] mx-1 shrink-0" />
+      <div className="h-4 w-px bg-[var(--border)] mx-1 shrink-0" />
 
       {/* 2. Saved Quick Actions Segment */}
       <div className="flex items-center gap-1.5 shrink-0">
@@ -190,10 +190,10 @@ export const FilterBar: React.FC = () => {
             return (
               <div
                 key={qa.id}
-                className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#1E1E1E] border border-[#FFC400] rounded-full text-xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-[var(--surface-2)] border border-[var(--accent)] rounded-full text-xs"
                 onClick={(e) => e.stopPropagation()}
               >
-                <Zap size={11} className="text-[#FFC400]" fill="currentColor" />
+                <Zap size={11} className="text-[var(--accent)]" fill="currentColor" />
                 <input
                   type="text"
                   value={editingName}
@@ -201,12 +201,12 @@ export const FilterBar: React.FC = () => {
                   onKeyDown={(e) => handleKeyDown(qa.id, e)}
                   onBlur={() => saveRename(qa.id)}
                   autoFocus
-                  className="bg-transparent border-none outline-none text-xs text-[#F5F5F5] w-28 font-medium"
+                  className="bg-transparent border-none outline-none text-xs text-[var(--text)] w-28 font-medium"
                 />
                 <button
                   type="button"
                   onClick={() => saveRename(qa.id)}
-                  className="p-0.5 text-[#FFC400] hover:text-[#FFFFFF]"
+                  className="p-0.5 text-[var(--accent)] hover:text-[var(--text)]"
                   title="Confirm rename"
                 >
                   <Check size={12} strokeWidth={2.5} />
@@ -222,13 +222,13 @@ export const FilterBar: React.FC = () => {
               title={`Apply ${qa.name} filter`}
               className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all ${
                 isActive
-                  ? 'bg-[#FFC400] text-[#111111] shadow-sm ring-1 ring-[#FFC400]'
-                  : 'bg-[#181818] text-[#E0E0E0] border border-[#2B2B2B] hover:border-[#4B4B4B] hover:text-[#FFFFFF]'
+                  ? 'bg-[var(--accent)] text-[var(--accent-ink)] shadow-xs ring-1 ring-[var(--accent)]'
+                  : 'bg-[var(--surface-2)] text-[var(--text)] border border-[var(--border)] hover:border-[var(--border-focus)]'
               }`}
             >
               <Zap
                 size={12}
-                className={isActive ? 'text-[#111111]' : 'text-[#FFC400]'}
+                className={isActive ? 'text-[var(--accent-ink)]' : 'text-[var(--accent)]'}
                 fill="currentColor"
               />
               <span>{qa.name}</span>
@@ -239,7 +239,7 @@ export const FilterBar: React.FC = () => {
                   type="button"
                   onClick={(e) => startRename(qa, e)}
                   title="Rename Quick Action"
-                  className={`p-0.5 rounded hover:bg-black/20 ${isActive ? 'text-[#111111]' : 'text-[#888888] hover:text-[#FFFFFF]'}`}
+                  className={`p-0.5 rounded hover:bg-black/20 ${isActive ? 'text-[var(--accent-ink)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
                 >
                   <Edit2 size={10} />
                 </button>
@@ -250,7 +250,7 @@ export const FilterBar: React.FC = () => {
                     removeQuickAction(qa.id);
                   }}
                   title="Delete Quick Action"
-                  className={`p-0.5 rounded hover:bg-black/20 ${isActive ? 'text-[#111111]' : 'text-[#888888] hover:text-[#FFFFFF]'}`}
+                  className={`p-0.5 rounded hover:bg-black/20 ${isActive ? 'text-[var(--accent-ink)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
                 >
                   <X size={11} strokeWidth={2.5} />
                 </button>
@@ -261,7 +261,7 @@ export const FilterBar: React.FC = () => {
       </div>
 
       {/* Subtle Divider if active individual filters exist */}
-      {filters.length > 0 && <div className="h-4 w-px bg-[#282828] mx-1 shrink-0" />}
+      {filters.length > 0 && <div className="h-4 w-px bg-[var(--border)] mx-1 shrink-0" />}
 
       {/* 3. Component Active Filter Chips */}
       {filters.map((f, i) => {
@@ -299,7 +299,7 @@ export const FilterBar: React.FC = () => {
         <button
           type="button"
           onClick={clearFilters}
-          className="text-[11px] text-[#777777] hover:text-[#E0E0E0] px-1 py-1 rounded transition-colors shrink-0"
+          className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] px-1 py-1 rounded transition-colors shrink-0"
         >
           Clear filters
         </button>

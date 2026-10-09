@@ -36,18 +36,35 @@ export const DetectionsSchema = z.object({
   faces: z.array(
     z.object({
       personId: z.number().int().nullable(),
+      name: z.string().nullable().optional(),
       box: BoxSchema,
     })
   ),
   objects: z.array(
     z.object({
       labelId: z.string(),
+      name: z.string().optional(),
       box: BoxSchema,
       score: z.number(),
     })
   ),
+  tags: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+      })
+    )
+    .optional(),
 });
 export type Detections = z.infer<typeof DetectionsSchema>;
+
+export const MediaTagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  timestamps: z.array(z.number()).optional(),
+});
+export type MediaTag = z.infer<typeof MediaTagSchema>;
 
 export const MediaDetailSchema = MediaSummarySchema.extend({
   path: z.string(),
@@ -64,14 +81,18 @@ export const MediaDetailSchema = MediaSummarySchema.extend({
     z.object({
       id: z.number().int(),
       name: z.string().nullable(),
+      timestamps: z.array(z.number()).optional(),
     })
   ),
   labels: z.array(
     z.object({
       module: z.string(),
       labelId: z.string(),
+      name: z.string().optional(),
+      timestamps: z.array(z.number()).optional(),
     })
   ),
+  tags: z.array(MediaTagSchema).optional(),
   frames: z.array(z.number()).optional(),
 });
 export type MediaDetail = z.infer<typeof MediaDetailSchema>;

@@ -166,17 +166,17 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
   };
 
   return (
-    <aside className="w-84 min-w-84 shrink-0 h-full bg-[#121212] border-l border-[#222222] flex flex-col justify-between p-5 select-none text-xs">
+    <aside className="w-84 min-w-84 shrink-0 h-full bg-[var(--surface-1)] border-l border-[var(--border)] flex flex-col justify-between p-5 select-none text-xs">
       {/* Top Header & Chat Messages */}
       <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto pr-1">
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-1.5">
-              <Sparkles size={14} className="text-[#FFC400]" />
-              <h2 className="text-base font-bold text-[#F5F5F5]">Ask AI</h2>
+              <Sparkles size={14} className="text-[var(--accent)]" />
+              <h2 className="text-base font-bold text-[var(--text)]">Ask AI</h2>
             </div>
-            <p className="text-[11px] text-[#777777] mt-0.5">
+            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
               Describe what you need. I'll set the filters.
             </p>
           </div>
@@ -184,7 +184,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
             type="button"
             onClick={toggleAiPanel}
             title="Close AI panel"
-            className="p-1 rounded-lg text-[#888888] hover:text-[#F5F5F5] hover:bg-[#222222] transition-colors"
+            className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors"
           >
             <X size={16} />
           </button>
@@ -197,7 +197,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
               return (
                 <div
                   key={msg.id}
-                  className="bg-[#FFC400] text-[#111111] p-3.5 rounded-2xl font-semibold text-xs leading-relaxed shadow-sm"
+                  className="bg-[var(--accent)] text-[var(--accent-ink)] p-3.5 rounded-2xl font-semibold text-xs leading-relaxed shadow-xs"
                 >
                   {msg.content}
                 </div>
@@ -210,9 +210,9 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
             return (
               <div
                 key={msg.id}
-                className="bg-[#181818] border border-[#262626] rounded-2xl p-4 space-y-3"
+                className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4 space-y-3 shadow-xs"
               >
-                <p className="text-xs text-[#E5E5E5] font-medium leading-relaxed">
+                <p className="text-xs text-[var(--text)] font-medium leading-relaxed">
                   {msg.content}
                 </p>
 
@@ -222,7 +222,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
                     {msg.summaryDescriptions.map((desc, idx) => (
                       <div
                         key={idx}
-                        className="inline-flex items-center px-3 py-1 bg-[#FFC400] text-[#111111] rounded-full text-xs font-bold"
+                        className="inline-flex items-center px-3 py-1 bg-[var(--accent)] text-[var(--accent-ink)] rounded-full text-xs font-bold"
                       >
                         {desc}
                       </div>
@@ -232,32 +232,32 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
 
                 {/* Interactive Quick Action Card */}
                 {msg.filters && msg.filters.length > 0 && (
-                  <div className="mt-3 bg-[#1F1F1F] border border-[#2B2B2B] rounded-xl p-3 space-y-2.5">
+                  <div className="mt-3 bg-[var(--surface-1)] border border-[var(--border)] rounded-xl p-3 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-[#FFC400] font-semibold text-[11px]">
+                      <div className="flex items-center gap-1.5 text-[var(--accent)] font-semibold text-[11px]">
                         <Zap size={13} fill="currentColor" />
                         <span>Quick Action Filter</span>
                       </div>
                       {isSaved ? (
-                        <span className="flex items-center gap-1 text-[#4ADE80] text-[10px] font-semibold">
+                        <span className="flex items-center gap-1 text-[var(--success)] text-[10px] font-semibold">
                           <Check size={12} strokeWidth={3} />
                           Saved to Toolbar
                         </span>
                       ) : (
-                        <span className="text-[10px] text-[#888888]">1-click preset</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">1-click preset</span>
                       )}
                     </div>
 
                     {/* Editable Title Input */}
-                    <div className="flex items-center bg-[#151515] border border-[#333333] rounded-lg px-2.5 py-1.5 focus-within:border-[#FFC400] transition-colors">
+                    <div className="flex items-center bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 focus-within:border-[var(--border-focus)] transition-colors">
                       <input
                         type="text"
                         value={msg.quickActionTitle ?? msg.suggestedTitle ?? ''}
                         onChange={(e) => handleTitleChange(msg.id, e.target.value)}
                         placeholder="Action name..."
-                        className="bg-transparent border-none outline-none w-full text-xs text-[#F5F5F5] font-medium"
+                        className="bg-transparent border-none outline-none w-full text-xs text-[var(--text)] font-medium"
                       />
-                      <Edit2 size={12} className="text-[#666666] shrink-0 ml-1.5" />
+                      <Edit2 size={12} className="text-[var(--text-muted)] shrink-0 ml-1.5" />
                     </div>
 
                     {/* Action Buttons */}
@@ -266,7 +266,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
                         <button
                           type="button"
                           onClick={() => handleSaveAsQuickAction(msg.id)}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#FFC400] text-[#111111] hover:brightness-105 active:brightness-95 rounded-lg text-xs font-bold transition-all shadow-sm"
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-105 active:brightness-95 rounded-lg text-xs font-bold transition-all shadow-xs"
                         >
                           <Zap size={13} fill="currentColor" />
                           Save as Quick Action
@@ -275,7 +275,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
                         <button
                           type="button"
                           disabled
-                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#252525] text-[#4ADE80] rounded-lg text-xs font-semibold cursor-default"
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[var(--surface-2)] text-[var(--success)] rounded-lg text-xs font-semibold cursor-default border border-[var(--border)]"
                         >
                           <Check size={13} strokeWidth={2.5} />
                           Active in FilterBar
@@ -286,7 +286,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
                         type="button"
                         onClick={() => handleReapply(msg)}
                         title="Re-apply this filter set"
-                        className="p-1.5 bg-[#262626] text-[#BBBBBB] hover:text-[#F5F5F5] hover:bg-[#333333] rounded-lg transition-colors"
+                        className="p-1.5 bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] rounded-lg transition-colors border border-[var(--border)]"
                       >
                         <RotateCcw size={14} />
                       </button>
@@ -296,13 +296,13 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
 
                 {/* Quick Suggestion Pills */}
                 {msg.suggestions && msg.suggestions.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-2 border-t border-[#242424]">
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-[var(--border)]">
                     {msg.suggestions.map((sug, i) => (
                       <button
                         key={i}
                         type="button"
                         onClick={() => handleSuggestionClick(sug)}
-                        className="px-3 py-1 rounded-full bg-[#1F1F1F] border border-[#2D2D2D] text-[11px] font-medium text-[#D4D4D4] hover:border-[#555555] hover:text-[#FFFFFF] transition-colors"
+                        className="px-3 py-1 rounded-full bg-[var(--surface-1)] border border-[var(--border)] text-[11px] font-medium text-[var(--text)] hover:border-[var(--border-focus)] transition-colors"
                       >
                         {sug}
                       </button>
@@ -315,8 +315,8 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
 
           {/* Thinking Indicator */}
           {isThinking && (
-            <div className="bg-[#181818] border border-[#262626] rounded-2xl p-3.5 flex items-center gap-2 text-xs text-[#888888] animate-pulse">
-              <Sparkles size={14} className="text-[#FFC400]" />
+            <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-3.5 flex items-center gap-2 text-xs text-[var(--text-muted)] animate-pulse">
+              <Sparkles size={14} className="text-[var(--accent)]" />
               <span>Analyzing intent & finding matches...</span>
             </div>
           )}
@@ -324,15 +324,15 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
       </div>
 
       {/* Bottom Composer */}
-      <div className="pt-3 border-t border-[#222222] shrink-0">
-        <div className="flex items-center bg-[#181818] border border-[#282828] rounded-full px-3 py-1.5 focus-within:border-[#444444] transition-all">
+      <div className="pt-3 border-t border-[var(--border)] shrink-0">
+        <div className="flex items-center bg-[var(--surface-2)] border border-[var(--border)] rounded-full px-3 py-1.5 focus-within:border-[var(--border-focus)] transition-all">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Ask for a filter, e.g. bride with flowers..."
-            className="bg-transparent border-none outline-none w-full text-xs text-[#E5E5E5] placeholder-[#666666] px-2"
+            className="bg-transparent border-none outline-none w-full text-xs text-[var(--text)] placeholder-[var(--text-dim)] px-2"
           />
           <button
             type="button"
@@ -340,8 +340,8 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
             disabled={!input.trim() || isThinking}
             className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all ${
               input.trim() && !isThinking
-                ? 'bg-[#FFC400] text-[#111111] hover:brightness-105 active:brightness-95 cursor-pointer'
-                : 'bg-[#252525] text-[#555555] cursor-not-allowed'
+                ? 'bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-105 active:brightness-95 cursor-pointer shadow-xs'
+                : 'bg-[var(--surface-3)] text-[var(--text-dim)] cursor-not-allowed'
             }`}
           >
             <ArrowUp size={14} strokeWidth={2.5} />

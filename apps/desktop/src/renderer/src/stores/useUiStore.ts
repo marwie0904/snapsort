@@ -10,6 +10,46 @@ export interface QuickAction {
   createdAt: string;
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+export type EffectiveTheme = 'light' | 'dark';
+
+export function getInitialThemePreference(): ThemePreference {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const saved = window.localStorage.getItem('snapsort-theme-preference');
+    if (saved === 'system' || saved === 'light' || saved === 'dark') {
+      return saved as ThemePreference;
+    }
+  }
+  return 'system';
+}
+
+export function resolveEffectiveTheme(pref: ThemePreference): EffectiveTheme {
+  if (pref === 'light') return 'light';
+  if (pref === 'dark') return 'dark';
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  return 'dark';
+}
+
+export function applyThemeToDocument(theme: EffectiveTheme) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.add('light');
+      document.documentElement.classList.remove('dark');
+    }
+  }
+}
+
+// Initial hydration sync
+if (typeof window !== 'undefined') {
+  applyThemeToDocument(resolveEffectiveTheme(getInitialThemePreference()));
+}
+
 interface UiState {
   sidebarOpen: boolean;
   activeTab: 'library' | 'folders';
@@ -27,9 +67,26 @@ interface UiState {
   aiPanelOpen: boolean;
 
   // View navigation
-  currentView: 'library' | 'people' | 'person-detail';
+  currentView: 'library' | 'people' | 'person-detail' | 'media-detail';
   selectedPersonId: number | null;
+  selectedMediaId: number | null;
+  currentMediaTimestamp: number;
+  isPlaying: boolean;
+  showDetections: boolean;
+  hoveredEntityId: string | null;
+  inspectorTab: 'categorized' | 'timeline';
   customPeopleNames: Record<number, string>;
+
+  openMediaDetail: (id: number) => void;
+  closeMediaDetail: () => void;
+  seekToTimestamp: (ts: number) => void;
+  togglePlayPause: () => void;
+  setIsPlaying: (playing: boolean) => void;
+  setShowDetections: (show: boolean) => void;
+  setHoveredEntityId: (id: string | null) => void;
+  setInspectorTab: (tab: 'categorized' | 'timeline') => void;
+  nextMedia: (items: Array<{ id: number }>) => void;
+  prevMedia: (items: Array<{ id: number }>) => void;
 
   navigateToPeople: () => void;
   navigateToPersonDetail: (id: number) => void;
@@ -59,6 +116,13 @@ interface UiState {
   renameQuickAction: (id: string, name: string) => void;
   applyQuickAction: (action: QuickAction) => void;
   getSearchQuery: () => LibrarySearch;
+
+  // Theme
+  themePreference: ThemePreference;
+  effectiveTheme: EffectiveTheme;
+  setThemePreference: (pref: ThemePreference) => void;
+  cycleTheme: () => void;
+  initThemeListener: () => () => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -93,7 +157,78 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   currentView: 'library',
   selectedPersonId: null,
+  selectedMediaId: null,
+  currentMediaTimestamp: 0,
+  isPlaying: false,
+  showDetections: true,
+  hoveredEntityId: null,
+  inspectorTab: 'categorized',
   customPeopleNames: {},
+
+  openMediaDetail: (id: number) =>
+    set({
+      currentView: 'media-detail',
+      selectedMediaId: id,
+      currentMediaTimestamp: 0,
+      isPlaying: false,
+      hoveredEntityId: null,
+    }),
+
+  closeMediaDetail: () =>
+    set({
+      currentView: 'library',
+      selectedMediaId: null,
+      isPlaying: false,
+      hoveredEntityId: null,
+    }),
+
+  seekToTimestamp: (ts: number) =>
+    set({
+      currentMediaTimestamp: Math.max(0, ts),
+    }),
+
+  togglePlayPause: () =>
+    set((state) => ({ isPlaying: !state.isPlaying })),
+
+  setIsPlaying: (isPlaying: boolean) =>
+    set({ isPlaying }),
+
+  setShowDetections: (showDetections: boolean) =>
+    set({ showDetections }),
+
+  setHoveredEntityId: (hoveredEntityId: string | null) =>
+    set({ hoveredEntityId }),
+
+  setInspectorTab: (inspectorTab: 'categorized' | 'timeline') =>
+    set({ inspectorTab }),
+
+  nextMedia: (items: Array<{ id: number }>) =>
+    set((state) => {
+      if (!state.selectedMediaId || items.length === 0) return {};
+      const currentIndex = items.findIndex((item) => item.id === state.selectedMediaId);
+      if (currentIndex === -1) return {};
+      const nextIndex = (currentIndex + 1) % items.length;
+      return {
+        selectedMediaId: items[nextIndex].id,
+        currentMediaTimestamp: 0,
+        isPlaying: false,
+        hoveredEntityId: null,
+      };
+    }),
+
+  prevMedia: (items: Array<{ id: number }>) =>
+    set((state) => {
+      if (!state.selectedMediaId || items.length === 0) return {};
+      const currentIndex = items.findIndex((item) => item.id === state.selectedMediaId);
+      if (currentIndex === -1) return {};
+      const prevIndex = (currentIndex - 1 + items.length) % items.length;
+      return {
+        selectedMediaId: items[prevIndex].id,
+        currentMediaTimestamp: 0,
+        isPlaying: false,
+        hoveredEntityId: null,
+      };
+    }),
 
   navigateToPeople: () =>
     set({
@@ -291,6 +426,49 @@ export const useUiStore = create<UiState>((set, get) => ({
       f: s.filters,
       sort: s.sort,
       view: s.view,
+    };
+  },
+
+  // Theme Implementation
+  themePreference: getInitialThemePreference(),
+  effectiveTheme: resolveEffectiveTheme(getInitialThemePreference()),
+
+  setThemePreference: (pref: ThemePreference) => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem('snapsort-theme-preference', pref);
+    }
+    const effective = resolveEffectiveTheme(pref);
+    applyThemeToDocument(effective);
+    set({ themePreference: pref, effectiveTheme: effective });
+  },
+
+  cycleTheme: () => {
+    const current = get().themePreference;
+    const next: ThemePreference =
+      current === 'system' ? 'dark' : current === 'dark' ? 'light' : 'system';
+    get().setThemePreference(next);
+  },
+
+  initThemeListener: () => {
+    const initialPref = get().themePreference;
+    const initialEffective = resolveEffectiveTheme(initialPref);
+    applyThemeToDocument(initialEffective);
+    set({ effectiveTheme: initialEffective });
+
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      return () => {};
+    }
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = (e: MediaQueryListEvent) => {
+      if (get().themePreference === 'system') {
+        const newTheme: EffectiveTheme = e.matches ? 'dark' : 'light';
+        applyThemeToDocument(newTheme);
+        set({ effectiveTheme: newTheme });
+      }
+    };
+    mediaQuery.addEventListener('change', listener);
+    return () => {
+      mediaQuery.removeEventListener('change', listener);
     };
   },
 }));

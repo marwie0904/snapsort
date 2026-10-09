@@ -54,4 +54,26 @@ describe('MockSnapsortApi', () => {
     expect(events).toContain('suggestions');
     expect(events).toContain('done');
   });
+
+  it('returns video media details with timestamps and tags', async () => {
+    const video = await api.getMedia(1); // CER_0412
+    expect(video.kind).toBe('video');
+    expect(video.durationS).toBe(25);
+    expect(video.people[0].timestamps).toBeDefined();
+    expect(video.people[0].timestamps?.length).toBeGreaterThan(0);
+    expect(video.labels[0].timestamps).toBeDefined();
+    expect(video.tags).toBeDefined();
+    expect(video.tags?.[0].name).toBe('Ceremony Walk');
+  });
+
+  it('retrieves timestamp-sensitive detections for video frames', async () => {
+    // At ts = 5s in CER_0412
+    const detections5s = await api.getDetections(1, 5);
+    expect(detections5s.faces.length).toBeGreaterThan(0);
+    expect(detections5s.faces[0].name).toBeDefined();
+    expect(detections5s.faces[0].box).toBeDefined();
+    expect(detections5s.objects.length).toBeGreaterThan(0);
+    expect(detections5s.objects[0].name).toBeDefined();
+  });
 });
+

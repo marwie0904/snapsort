@@ -83,12 +83,16 @@ const referenceItems: MediaDetail[] = [
     height: 2160,
     place: { name: 'Ceremony Garden', lat: 40.785091, lon: -73.968285 },
     people: [
-      { id: 1, name: 'Groom' },
-      { id: 2, name: 'Bride' },
+      { id: 1, name: 'Groom', timestamps: [0, 2, 5, 8, 12, 18, 22] },
+      { id: 2, name: 'Bride', timestamps: [3, 5, 10, 12, 15, 20, 24] },
     ],
     labels: [
-      { module: 'objects', labelId: 'dress' },
-      { module: 'objects', labelId: 'suit' },
+      { module: 'objects', labelId: 'dress', name: 'Wedding Dress', timestamps: [3, 5, 12, 15, 20] },
+      { module: 'objects', labelId: 'suit', name: 'Suit / Tuxedo', timestamps: [0, 5, 8, 12, 18] },
+    ],
+    tags: [
+      { id: 'ceremony', name: 'Ceremony Walk', timestamps: [0, 2, 5, 10] },
+      { id: 'vows', name: 'Vow Exchange', timestamps: [12, 15, 18, 22] },
     ],
     matches: [{ ts: 5, score: 0.94 }],
     bestFrameTs: 5,
@@ -109,8 +113,12 @@ const referenceItems: MediaDetail[] = [
       { id: 2, name: 'Bride' },
     ],
     labels: [
-      { module: 'objects', labelId: 'flowers' },
-      { module: 'objects', labelId: 'dress' },
+      { module: 'objects', labelId: 'flowers', name: 'Bouquet & Flowers' },
+      { module: 'objects', labelId: 'dress', name: 'Wedding Dress' },
+    ],
+    tags: [
+      { id: 'garden', name: 'Garden Ceremony' },
+      { id: 'portrait', name: 'Couple Portrait' },
     ],
   },
   {
@@ -129,8 +137,11 @@ const referenceItems: MediaDetail[] = [
       { id: 2, name: 'Bride' },
     ],
     labels: [
-      { module: 'objects', labelId: 'rings' },
-      { module: 'objects', labelId: 'suit' },
+      { module: 'objects', labelId: 'rings', name: 'Rings' },
+      { module: 'objects', labelId: 'suit', name: 'Suit / Tuxedo' },
+    ],
+    tags: [
+      { id: 'rings', name: 'Ring Exchange' },
     ],
   },
   {
@@ -146,12 +157,17 @@ const referenceItems: MediaDetail[] = [
     height: 2160,
     place: { name: 'Ceremony Garden', lat: 40.785091, lon: -73.968285 },
     people: [
-      { id: 1, name: 'Groom' },
-      { id: 2, name: 'Bride' },
+      { id: 1, name: 'Groom', timestamps: [5, 12, 20, 30, 45, 60] },
+      { id: 2, name: 'Bride', timestamps: [8, 12, 22, 35, 45, 65, 75] },
     ],
     labels: [
-      { module: 'objects', labelId: 'dress' },
-      { module: 'objects', labelId: 'suit' },
+      { module: 'objects', labelId: 'dress', name: 'Wedding Dress', timestamps: [8, 12, 35, 45, 65] },
+      { module: 'objects', labelId: 'suit', name: 'Suit / Tuxedo', timestamps: [5, 12, 20, 45, 60] },
+      { module: 'objects', labelId: 'flowers', name: 'Bouquet & Flowers', timestamps: [12, 22, 30] },
+    ],
+    tags: [
+      { id: 'kiss', name: 'First Kiss', timestamps: [12, 14, 15] },
+      { id: 'recessional', name: 'Recessional', timestamps: [40, 45, 50, 60] },
     ],
     matches: [
       { ts: 12, score: 0.91 },
@@ -175,7 +191,8 @@ const referenceItems: MediaDetail[] = [
       { id: 3, name: 'Anna' },
       { id: 4, name: 'David' },
     ],
-    labels: [{ module: 'objects', labelId: 'champagne' }],
+    labels: [{ module: 'objects', labelId: 'champagne', name: 'Champagne / Glass' }],
+    tags: [{ id: 'reception', name: 'Grand Reception' }],
   },
   {
     id: 6,
@@ -189,8 +206,19 @@ const referenceItems: MediaDetail[] = [
     width: 3840,
     height: 2160,
     place: { name: 'Grand Ballroom', lat: 40.758896, lon: -73.98513 },
-    people: [{ id: 3, name: 'Anna' }],
-    labels: [{ module: 'objects', labelId: 'cake' }],
+    people: [
+      { id: 3, name: 'Anna', timestamps: [20, 40, 80, 120] },
+      { id: 1, name: 'Groom', timestamps: [70, 80, 85, 150] },
+      { id: 2, name: 'Bride', timestamps: [75, 80, 90, 150] },
+    ],
+    labels: [
+      { module: 'objects', labelId: 'cake', name: 'Wedding Cake', timestamps: [75, 80, 85, 90] },
+      { module: 'objects', labelId: 'champagne', name: 'Champagne / Glass', timestamps: [20, 30, 80, 110] },
+    ],
+    tags: [
+      { id: 'cake-cutting', name: 'Cake Cutting', timestamps: [75, 80, 85, 90] },
+      { id: 'toast', name: 'Champagne Toast', timestamps: [100, 110, 120] },
+    ],
     matches: [{ ts: 80, score: 0.72 }],
     bestFrameTs: 80,
   },
@@ -209,7 +237,8 @@ const referenceItems: MediaDetail[] = [
       { id: 1, name: 'Groom' },
       { id: 2, name: 'Bride' },
     ],
-    labels: [{ module: 'objects', labelId: 'dress' }],
+    labels: [{ module: 'objects', labelId: 'dress', name: 'Wedding Dress' }],
+    tags: [{ id: 'golden-hour', name: 'Golden Hour' }],
   },
   {
     id: 8,
@@ -226,7 +255,8 @@ const referenceItems: MediaDetail[] = [
       { id: 2, name: 'Bride' },
       { id: 5, name: 'Sophia' },
     ],
-    labels: [{ module: 'objects', labelId: 'champagne' }],
+    labels: [{ module: 'objects', labelId: 'champagne', name: 'Champagne / Glass' }],
+    tags: [{ id: 'sunset', name: 'Sunset Toast' }],
   },
 ];
 
@@ -242,19 +272,48 @@ export function generateMockMediaItems(): MediaDetail[] {
     const folder = mockFolders[folderId - 1];
     const place = mockPlaces[i % mockPlaces.length];
 
+    const durationS = isVideo ? 15 + (i % 180) : undefined;
+
+    // Helper to generate a few timestamps
+    const getTimestamps = (offset: number) => {
+      if (!durationS) return undefined;
+      const pts = [
+        Math.floor((durationS * (0.1 + (offset % 3) * 0.2))),
+        Math.floor((durationS * (0.4 + (offset % 2) * 0.2))),
+        Math.floor((durationS * 0.8)),
+      ].filter((t) => t < durationS);
+      return Array.from(new Set(pts)).sort((a, b) => a - b);
+    };
+
     // Assign people
     const hasGroomAndBride = i % 7 === 0;
     const hasGroom = hasGroomAndBride || i % 4 === 0;
     const hasBride = hasGroomAndBride || i % 5 === 0;
     const people = [];
-    if (hasGroom) people.push({ id: 1, name: 'Groom' });
-    if (hasBride) people.push({ id: 2, name: 'Bride' });
-    if (i % 6 === 0) people.push({ id: 3, name: 'Anna' });
+    if (hasGroom) people.push({ id: 1, name: 'Groom', timestamps: getTimestamps(1) });
+    if (hasBride) people.push({ id: 2, name: 'Bride', timestamps: getTimestamps(2) });
+    if (i % 6 === 0) people.push({ id: 3, name: 'Anna', timestamps: getTimestamps(3) });
 
     const faceCount = people.length === 0 ? (i % 2 === 0 ? 0 : 1) : people.length;
-
-    const durationS = isVideo ? 15 + (i % 180) : undefined;
     const matches = isVideo && hasGroomAndBride ? [{ ts: 10, score: 0.9 }] : undefined;
+
+    const labelDef = mockLabelManifest.modules[0].labels[i % 7];
+    const labels = [
+      {
+        module: 'objects',
+        labelId: labelDef.id,
+        name: labelDef.name,
+        timestamps: getTimestamps(4),
+      },
+    ];
+
+    const tags = [
+      {
+        id: `tag-${i % 5}`,
+        name: ['Outdoor', 'Ceremony', 'Cocktail', 'Dance', 'Sunset'][i % 5],
+        timestamps: getTimestamps(5),
+      },
+    ];
 
     items.push({
       id: i,
@@ -269,9 +328,8 @@ export function generateMockMediaItems(): MediaDetail[] {
       height: isVideo ? 1080 : 3024,
       place,
       people,
-      labels: [
-        { module: 'objects', labelId: mockLabelManifest.modules[0].labels[i % 7].id },
-      ],
+      labels,
+      tags,
       matches,
       bestFrameTs: matches ? matches[0].ts : isVideo ? 1 : undefined,
     });

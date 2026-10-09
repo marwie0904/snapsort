@@ -97,7 +97,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
         <button
           type="button"
           onClick={navigateToPeople}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#888888] hover:text-[#F5F5F5] transition-colors py-1 px-2.5 rounded-lg hover:bg-[#1C1C1C]"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text)] transition-colors py-1 px-2.5 rounded-lg hover:bg-[var(--surface-2)]"
         >
           <ArrowLeft size={14} />
           <span>All People</span>
@@ -105,10 +105,10 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
       </div>
 
       {/* Person Header Card */}
-      <div className="p-6 rounded-2xl bg-[#141414] border border-[#222222] mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+      <div className="p-6 rounded-2xl bg-[var(--surface-1)] border border-[var(--border)] mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-xs">
         <div className="flex items-center gap-5">
           {/* Circular Face Avatar */}
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-600/30 to-yellow-500/20 border-2 border-[#FFC400] flex items-center justify-center text-[#FFC400] shadow-lg shrink-0 overflow-hidden">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-600/30 to-yellow-500/20 border-2 border-[var(--accent)] flex items-center justify-center text-[var(--accent)] shadow-md shrink-0 overflow-hidden">
             <span className="text-2xl font-bold tracking-tight">
               {displayName !== 'Unnamed Face' ? (
                 displayName.slice(0, 2).toUpperCase()
@@ -130,31 +130,31 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
                   onBlur={saveRename}
                   placeholder="Enter person name..."
                   autoFocus
-                  className="bg-[#202020] border border-[#FFC400] rounded-lg px-3 py-1 text-lg font-bold text-[#F5F5F5] focus:outline-none w-64"
+                  className="bg-[var(--surface-2)] border border-[var(--accent)] rounded-lg px-3 py-1 text-lg font-bold text-[var(--text)] focus:outline-none w-64"
                 />
                 <button
                   type="button"
                   onClick={saveRename}
-                  className="p-1.5 bg-[#FFC400] text-[#111111] rounded-lg hover:bg-[#E5B000]"
+                  className="p-1.5 bg-[var(--accent)] text-[var(--accent-ink)] rounded-lg hover:brightness-105"
                 >
                   <Check size={16} strokeWidth={2.5} />
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl font-bold tracking-tight text-[#F5F5F5]">{displayName}</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-[var(--text)]">{displayName}</h1>
                 <button
                   type="button"
                   onClick={startRename}
                   title="Rename person"
-                  className="p-1 rounded text-[#888888] hover:text-[#FFC400] hover:bg-[#202020] transition-colors"
+                  className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
                 >
                   <Edit2 size={14} />
                 </button>
               </div>
             )}
 
-            <div className="flex items-center gap-3 text-xs text-[#888888]">
+            <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
               <span className="tabular-nums font-medium">
                 {items.length || rawPerson?.count || 0} media items
               </span>
@@ -198,16 +198,16 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
 
       {/* Media Grid Section */}
       <div className="flex-1">
-        <div className="text-xs font-bold uppercase tracking-wider text-[#888888] mb-4">
+        <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">
           All Media with {displayName}
         </div>
 
         {isLoadingMedia ? (
-          <div className="h-64 flex items-center justify-center text-xs text-[#666666]">
+          <div className="h-64 flex items-center justify-center text-xs text-[var(--text-muted)]">
             Loading media...
           </div>
         ) : items.length === 0 ? (
-          <div className="py-20 text-center text-xs text-[#666666] bg-[#141414] rounded-2xl border border-[#222222]">
+          <div className="py-20 text-center text-xs text-[var(--text-muted)] bg-[var(--surface-1)] rounded-2xl border border-[var(--border)]">
             No photos or videos matched for this person yet.
           </div>
         ) : (

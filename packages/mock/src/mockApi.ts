@@ -188,28 +188,63 @@ export class MockSnapsortApi implements SnapsortApi {
 
   async getDetections(id: number, ts?: number): Promise<Detections> {
     const item = await this.getMedia(id);
-    const faces = item.people.map((p, index) => ({
-      personId: p.id,
-      box: {
-        x: 0.15 + index * 0.35,
-        y: 0.2,
-        w: 0.25,
-        h: 0.3,
-      },
-    }));
+    const isVideo = item.kind === 'video';
 
-    const objects = item.labels.map((l, index) => ({
-      labelId: l.labelId,
-      box: {
-        x: 0.2 + index * 0.25,
-        y: 0.55,
-        w: 0.3,
-        h: 0.35,
-      },
-      score: 0.92,
-    }));
+    // If video and timestamp provided, check which entities appear near this timestamp
+    const activePeople = isVideo && ts !== undefined
+      ? item.people.filter((p) => {
+          if (!p.timestamps || p.timestamps.length === 0) return true;
+          return p.timestamps.some((t) => Math.abs(t - ts) <= 2);
+        })
+      : item.people;
 
-    return { faces, objects };
+    // If no one matched window, fallback to at least one person if item has people
+    const displayPeople = activePeople.length > 0 ? activePeople : item.people.slice(0, 1);
+
+    const faces = displayPeople.map((p, index) => {
+      const wobble = ts !== undefined ? ((ts + index) % 5) * 0.02 - 0.04 : 0;
+      return {
+        personId: p.id,
+        name: p.name,
+        box: {
+          x: Math.max(0.05, Math.min(0.7, 0.15 + (index % 3) * 0.28 + wobble)),
+          y: Math.max(0.08, Math.min(0.5, 0.18 + wobble)),
+          w: 0.22,
+          h: 0.28,
+        },
+      };
+    });
+
+    const activeLabels = isVideo && ts !== undefined
+      ? item.labels.filter((l) => {
+          if (!l.timestamps || l.timestamps.length === 0) return true;
+          return l.timestamps.some((t) => Math.abs(t - ts) <= 3);
+        })
+      : item.labels;
+
+    const displayLabels = activeLabels.length > 0 ? activeLabels : item.labels.slice(0, 1);
+
+    const objects = displayLabels.map((l, index) => {
+      const wobble = ts !== undefined ? ((ts + index) % 4) * 0.02 - 0.03 : 0;
+      return {
+        labelId: l.labelId,
+        name: l.name || l.labelId,
+        box: {
+          x: Math.max(0.1, Math.min(0.65, 0.2 + (index % 3) * 0.26 + wobble)),
+          y: Math.max(0.4, Math.min(0.7, 0.52 + wobble)),
+          w: 0.28,
+          h: 0.32,
+        },
+        score: 0.92,
+      };
+    });
+
+    const activeTags = (item.tags || []).filter((t) => {
+      if (!isVideo || ts === undefined || !t.timestamps || t.timestamps.length === 0) return true;
+      return t.timestamps.some((time) => Math.abs(time - ts) <= 4);
+    }).map((t) => ({ id: t.id, name: t.name }));
+
+    return { faces, objects, tags: activeTags };
   }
 
   async stageQueryImage(input: { path: string } | { bytes: ArrayBuffer; mime: string }) {
