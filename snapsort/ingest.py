@@ -268,6 +268,7 @@ def _register(conn, path: Path, kind: str, frames_root: Path) -> int:
             "INSERT INTO media (path, kind) VALUES (?, ?)", (str(path), kind)
         ).lastrowid
         if kind == "image":
+            load_image(path)
             rows = [(media_id, 0, None, str(path))]
         else:
             files = extract_frames(path, frames_root / str(media_id))

@@ -127,7 +127,9 @@ def test_missing_unsupported_and_corrupt_files_skipped(tmp_path, data_dir):
     notes.write_text("x")
     corrupt = tmp_path / "bad.mp4"
     corrupt.write_bytes(b"not a video")
-    for path in [tmp_path / "missing.jpg", notes, corrupt]:
+    bad_image = tmp_path / "bad.jpg"
+    bad_image.write_bytes(b"not an image")
+    for path in [tmp_path / "missing.jpg", notes, corrupt, bad_image]:
         assert run_ingest([path], [Counter("a")], data_dir) is False
     assert q(data_dir, "SELECT count(*) FROM media") == [(0,)]
     assert not any((data_dir / "frames").glob("*"))
