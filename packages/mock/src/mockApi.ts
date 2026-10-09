@@ -8,6 +8,7 @@ import {
   LibrarySearch,
   MediaDetail,
   MediaSummary,
+  MergeSuggestion,
   Person,
   PlaceSummary,
   SceneSummary,
@@ -310,6 +311,10 @@ export class MockSnapsortApi implements SnapsortApi {
 
   async listPeople(): Promise<Person[]> {
     return this.people;
+  }
+
+  async suggestMerges(): Promise<MergeSuggestion[]> {
+    return [];
   }
 
   async renamePerson(id: number, name: string): Promise<void> {

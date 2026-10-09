@@ -147,9 +147,20 @@ export const PersonSchema = z.object({
   id: z.number().int(),
   name: z.string().nullable(),
   count: z.number().int(),
+  /** Face detections. Video is sampled once a second, so in video this is about the seconds on screen. */
+  faces: z.number().int().optional(),
   faceRef: z.string().optional(),
 });
 export type Person = z.infer<typeof PersonSchema>;
+
+/** Two people grouping kept apart whose faces sit at the same spot of a video seconds apart. */
+export const MergeSuggestionSchema = z.object({
+  /** The person with more faces first. */
+  ids: z.tuple([z.number().int(), z.number().int()]),
+  /** Pairs of faces at most 2 s apart. */
+  links: z.number().int(),
+});
+export type MergeSuggestion = z.infer<typeof MergeSuggestionSchema>;
 
 export const FolderSchema = z.object({
   id: z.number().int(),
@@ -298,6 +309,7 @@ export interface SnapsortApi {
   renamePerson(id: number, name: string): Promise<void>;
   /** Merges the rest into the first id, which keeps its name (or takes the first other name). Same drive only. */
   mergePeople(ids: number[]): Promise<{ id: number }>;
+  suggestMerges(): Promise<MergeSuggestion[]>;
 
   // folders (ingest)
   listLibraries(): Promise<Library[]>;

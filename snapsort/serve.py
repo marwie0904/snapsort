@@ -442,9 +442,17 @@ def list_people(params=None) -> list[dict]:
     for lib in libraries():
         with lib.db() as conn:
             for pid, name, faces, files in search_mod.list_people(conn):
-                out.append({"id": lib.gid(pid), "name": name, "count": files,
+                out.append({"id": lib.gid(pid), "name": name, "count": files, "faces": faces,
                             "faceRef": f"snapsort-media://face/{lib.gid(pid)}"})
     return sorted(out, key=lambda p: -p["count"])
+
+
+def suggest_merges(params=None) -> list[dict]:
+    out = []
+    for lib in libraries():
+        with lib.db() as conn:
+            out += [{"ids": [lib.gid(a), lib.gid(b)], "links": n} for a, b, n in search_mod.merge_suggestions(conn)]
+    return sorted(out, key=lambda s: -s["links"])
 
 
 def rename_person(params) -> None:
@@ -582,7 +590,8 @@ def resolve_media(params) -> str:
 
 METHODS = {
     "listLibraries": list_libraries, "libraryFor": library_for_path, "query": query, "getMedia": get_media,
-    "getDetections": get_detections, "listPeople": list_people, "renamePerson": rename_person,
+    "getDetections": get_detections, "listPeople": list_people, "suggestMerges": suggest_merges,
+    "renamePerson": rename_person,
     "mergePeople": merge_people, "listPlaces": list_places, "getLabelManifest": label_manifest, "getCounts": counts,
     "resolveMedia": resolve_media,
 }

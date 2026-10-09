@@ -9,7 +9,7 @@ import pytest
 import snapsort.cli as cli
 from snapsort.group import SCHEMA as GROUP_SCHEMA
 from snapsort.ingest import connect
-from snapsort.search import QueryError, Segment, list_people, open_db, search, segments
+from snapsort.search import QueryError, Segment, list_people, merge_suggestions, open_db, search, segments
 
 _names = itertools.count()
 
@@ -744,3 +744,25 @@ def test_label_filter_all_and_any(db):
     assert [h.path for h in search(db, [{"kind": "label", "labelIds": ["Dog", "cake"]}])] == ["/lib/v.mov"]
     hits = search(db, [{"kind": "label", "labelIds": ["dog", "cake"], "match": "any"}], sort="name")
     assert [(h.path, ts_of(h)) for h in hits] == [("/lib/i.jpg", []), ("/lib/v.mov", [1.0, 3.0])]
+
+
+def video_face(conn, person_id, frame_id, box):
+    with conn:
+        rid = conn.execute("INSERT INTO results (frame_id, module, label, bbox) VALUES (?, 'faces', 'face', ?)",
+                           (frame_id, json.dumps(box))).lastrowid
+        conn.execute("INSERT INTO person_faces (result_id, person_id, score) VALUES (?, ?, 1.0)", (rid, person_id))
+
+
+def test_merge_suggestions_pair_faces_at_one_spot_seconds_apart(db):
+    _, f = media(db, "video", frames=10)
+    _, g = media(db, "video", frames=10)
+    spot, elsewhere = [0.4, 0.3, 0.2, 0.2], [0.0, 0.0, 0.2, 0.2]
+    me, masked, friend, later, other_video = (person(db, []) for _ in range(5))
+    for i in (0, 1, 2):
+        video_face(db, me, f[i], spot)
+    video_face(db, masked, f[3], [0.42, 0.31, 0.2, 0.2])  # same spot, links to my faces 1 and 2 s before
+    video_face(db, friend, f[2], elsewhere)                # shares a frame with me
+    video_face(db, friend, f[4], spot)
+    video_face(db, later, f[8], spot)                      # 6 s after me
+    video_face(db, other_video, g[3], spot)
+    assert merge_suggestions(db) == [(me, masked, 2), (friend, masked, 1)]  # more faces first

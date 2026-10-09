@@ -1,9 +1,11 @@
 """Search: stack filters over stored results and return the matching media, with time segments for videos.
 
 Design: docs/design/2026-10-09-filters.md."""
+import json
 import re
 import sqlite3
 import threading
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -392,6 +394,45 @@ def list_people(conn) -> list[tuple[int, str | None, int, int]]:
         "SELECT p.id, p.name, count(*), count(DISTINCT f.media_id) FROM persons p "
         "JOIN person_faces pf ON pf.person_id = p.id JOIN results r ON r.id = pf.result_id "
         "JOIN frames f ON f.id = r.frame_id GROUP BY p.id ORDER BY 4 DESC, p.id").fetchall()
+
+
+NEAR_S = 2      # seconds apart in one video
+NEAR_IOU = 0.2  # face box overlap
+
+
+def merge_suggestions(conn) -> list[tuple[int, int, int]]:
+    """(person, person, links) for two persons whose faces sit at the same spot of a video at most NEAR_S
+    seconds apart, and who never share a frame. A mask, a hand or a turned head splits one person this way.
+    Each link is one such pair of faces. The person with more faces comes first; most links first."""
+    if not _grouped(conn):
+        return []
+    rows = conn.execute(
+        "SELECT pf.person_id, f.media_id, f.ts, r.bbox, r.frame_id FROM person_faces pf "
+        "JOIN results r ON r.id = pf.result_id JOIN frames f ON f.id = r.frame_id "
+        "WHERE f.ts IS NOT NULL ORDER BY f.media_id, f.ts").fetchall()
+    in_frame = defaultdict(set)
+    for pid, *_, fid in rows:
+        in_frame[fid].add(pid)
+    together = {(a, b) for ps in in_frame.values() for a in ps for b in ps}
+    links = Counter()
+    for i, (a, media, ts, box, _) in enumerate(rows):
+        for b, media2, ts2, box2, _ in rows[i + 1:]:
+            if media2 != media or ts2 - ts > NEAR_S:
+                break
+            if a != b and (a, b) not in together and _iou(json.loads(box), json.loads(box2)) > NEAR_IOU:
+                links[min(a, b), max(a, b)] += 1
+    faces = dict(conn.execute("SELECT person_id, count(*) FROM person_faces GROUP BY person_id").fetchall())
+    pairs = [(a, b, n) if faces[a] >= faces[b] else (b, a, n) for (a, b), n in links.items()]
+    return sorted(pairs, key=lambda p: (-p[2], p[0], p[1]))
+
+
+def _iou(a, b) -> float:
+    """Intersection over union of two x, y, w, h boxes."""
+    ix = max(0.0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = a[2] * a[3] + b[2] * b[3] - inter
+    return inter / union if union > 0 else 0.0
 
 
 def list_places(conn) -> list[tuple[str, int]]:

@@ -132,7 +132,8 @@ def test_merge_people(tmp_path, monkeypatch):
 
     # the unnamed target takes the first name among the others
     assert call("mergePeople", ids=[ids[None], ids["Anna"], ids["Ben"]]) == {"id": ids[None]}
-    assert sorted((p["name"], p["count"]) for p in call("listPeople")) == [("Anna", 2), ("Cara", 1)]
+    people = sorted((p["name"], p["count"], p["faces"]) for p in call("listPeople"))
+    assert people == [("Anna", 2, 3), ("Cara", 1, 1)]
     conn = sqlite3.connect(a / "snapsort.db")
     pid = ids[None] % serve.SHIFT
     assert conn.execute("SELECT count(*), min(person_id) FROM person_faces").fetchone() == (3, pid)

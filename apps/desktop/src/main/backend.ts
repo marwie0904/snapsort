@@ -96,6 +96,7 @@ export function registerBackend(getWindow: () => BrowserWindow | null): MediaRes
   handle('api:listPeople', () => call('listPeople'));
   handle('api:renamePerson', (id, name) => call('renamePerson', { id, name }));
   handle('api:mergePeople', (ids) => call('mergePeople', { ids }));
+  handle('api:suggestMerges', () => call('suggestMerges'));
   handle('api:listLibraries', refresh);
   handle('api:listFolders', async () =>
     (await refresh()).flatMap((l) =>
@@ -164,7 +165,7 @@ function registerMock(getWindow: () => BrowserWindow | null): void {
   const mock = new MockSnapsortApi();
   const methods = [
     'query', 'getMedia', 'getDetections', 'getCounts', 'getLabelManifest', 'listPlaces', 'listScenes',
-    'listPeople', 'renamePerson', 'mergePeople', 'listLibraries', 'listFolders', 'rescanFolder', 'getIngestJobs',
+    'listPeople', 'renamePerson', 'mergePeople', 'suggestMerges', 'listLibraries', 'listFolders', 'rescanFolder', 'getIngestJobs',
     'cancelIngest', 'ejectDrive', 'revealInFinder', 'openMedia', 'stageQueryImage',
   ] as const;
   for (const m of methods) {

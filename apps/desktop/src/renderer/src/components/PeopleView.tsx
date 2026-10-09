@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, User, Edit2, Check, X, Sparkles, Filter, Merge } from 'lucide-react';
+import { Search, User, Edit2, Check, X, Sparkles, Filter, Merge, ChevronDown } from 'lucide-react';
 import { Button } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
 import { MockSnapsortApi } from '@snapsort/mock';
@@ -25,6 +25,11 @@ const avatarGradients = [
   'from-[var(--surface-3)] to-[var(--surface-2)] text-[var(--overlay-object,#5AC8FA)]',
 ];
 
+// An unnamed person seen in one file with at most this many faces (video is sampled once a second, so about
+// 3 s on screen) is a passer-by or a false detection: listed under Others, collapsed.
+const BRIEF_FACES = 3;
+const isBrief = (p: Person) => p.count <= 1 && (p.faces ?? Infinity) <= BRIEF_FACES;
+
 export const PeopleView: React.FC = () => {
   const api = useMemo(() => getApi(), []);
   const queryClient = useQueryClient();
@@ -42,11 +47,19 @@ export const PeopleView: React.FC = () => {
   const [selected, setSelected] = useState<number[]>([]); // in click order
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [showOthers, setShowOthers] = useState(false);
+  const [dismissed, setDismissed] = useState<string[]>([]); // suggestions, for this session only
+  const [suggestionBusy, setSuggestionBusy] = useState<string | null>(null);
 
   // Fetch people from API
   const { data: rawPeople = [], isLoading } = useQuery({
     queryKey: ['people'],
     queryFn: () => api.listPeople(),
+  });
+
+  const { data: suggestions = [] } = useQuery({
+    queryKey: ['mergeSuggestions'],
+    queryFn: () => api.suggestMerges(),
   });
 
   // Apply custom local renames over API data for instant reactivity
@@ -73,9 +86,20 @@ export const PeopleView: React.FC = () => {
     [filteredPeople]
   );
   const unnamedPeople = useMemo(
-    () => filteredPeople.filter((p) => !p.name || p.name.trim().length === 0),
+    () => filteredPeople.filter((p) => (!p.name || p.name.trim().length === 0) && !isBrief(p)),
     [filteredPeople]
   );
+  const otherPeople = useMemo(
+    () => filteredPeople.filter((p) => (!p.name || p.name.trim().length === 0) && isBrief(p)),
+    [filteredPeople]
+  );
+
+  const shownSuggestions = useMemo(() => {
+    const byId = new Map(people.map((p) => [p.id, p]));
+    return suggestions
+      .map((s) => ({ key: s.ids.join('-'), a: byId.get(s.ids[0]), b: byId.get(s.ids[1]) }))
+      .filter((s): s is { key: string; a: Person; b: Person } => !!s.a && !!s.b && !dismissed.includes(s.key));
+  }, [suggestions, people, dismissed]);
 
   const startRename = (person: Person, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -113,18 +137,35 @@ export const PeopleView: React.FC = () => {
   const selectedPeople = selected.map((id) => people.find((p) => p.id === id)).filter((p): p is Person => !!p);
   const mergeTarget = selectedPeople.find((p) => p.name?.trim()) ?? selectedPeople[0];
 
+  const mergeIds = async (ids: number[]) => {
+    await api.mergePeople(ids);
+    const stale = ['people', 'counts', 'query', 'personMedia', 'mediaDetail', 'mediaDetections', 'mergeSuggestions'];
+    queryClient.invalidateQueries({ predicate: (q) => stale.includes(q.queryKey[0] as string) });
+  };
+
   const doMerge = async () => {
     if (!mergeTarget) return;
     setMergeBusy(true);
     try {
-      await api.mergePeople([mergeTarget.id, ...selected.filter((id) => id !== mergeTarget.id)]);
+      await mergeIds([mergeTarget.id, ...selected.filter((id) => id !== mergeTarget.id)]);
       toggleMerging();
-      const stale = ['people', 'counts', 'query', 'personMedia', 'mediaDetail', 'mediaDetections'];
-      queryClient.invalidateQueries({ predicate: (q) => stale.includes(q.queryKey[0] as string) });
     } catch (err) {
       setMergeError((err as Error).message);
     } finally {
       setMergeBusy(false);
+    }
+  };
+
+  // A named person keeps their name; otherwise the one with more faces (listed first) takes the other
+  const acceptSuggestion = async (key: string, a: Person, b: Person) => {
+    const [target, other] = !a.name?.trim() && b.name?.trim() ? [b, a] : [a, b];
+    setSuggestionBusy(key);
+    try {
+      await mergeIds([target.id, other.id]);
+    } catch (err) {
+      console.error('Failed to merge people:', err);
+    } finally {
+      setSuggestionBusy(null);
     }
   };
 
@@ -141,6 +182,68 @@ export const PeopleView: React.FC = () => {
       {selected.includes(id) && <Check size={12} strokeWidth={3} />}
     </div>
   );
+
+  const unnamedCard = (person: Person) => {
+    const isEditing = editingId === person.id;
+
+    return (
+      <div
+        key={person.id}
+        onClick={() =>
+          merging ? toggleSelected(person.id) : !isEditing && navigateToPersonDetail(person.id)
+        }
+        className={`group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs ${selectRing(person.id)}`}
+      >
+        {merging && selectMark(person.id)}
+        {/* Avatar */}
+        <div className="relative overflow-hidden w-20 h-20 rounded-full bg-[var(--surface-2)] border-2 border-dashed border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors shadow-sm mb-2.5">
+          <User size={24} strokeWidth={1.5} />
+          <FaceImage src={person.faceRef} />
+        </div>
+
+        {/* Add Name Action */}
+        {isEditing ? (
+          <div
+            className="w-full flex items-center justify-center gap-1 mt-1 px-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="text"
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onKeyDown={(e) => handleKeyDown(person.id, e)}
+              onBlur={() => saveRename(person.id)}
+              placeholder="Enter name..."
+              autoFocus
+              className="w-full max-w-[120px] bg-[var(--surface-2)] border border-[var(--accent)] rounded px-2 py-1 text-xs text-center text-[var(--text)] font-semibold focus:outline-none placeholder-[var(--text-dim)]"
+            />
+            <button
+              type="button"
+              onClick={() => saveRename(person.id)}
+              className="p-1 text-[var(--accent)] hover:text-[var(--text)]"
+            >
+              <Check size={13} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center text-center w-full px-2">
+            {!merging && (
+              <button
+                type="button"
+                onClick={(e) => startRename(person, e)}
+                className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all shadow-xs"
+              >
+                <span>+ Add Name</span>
+              </button>
+            )}
+            <span className="text-xs text-[var(--text-muted)] font-medium tabular-nums mt-1">
+              {person.count} items
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const handleKeyDown = (id: number, e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -222,6 +325,68 @@ export const PeopleView: React.FC = () => {
         </div>
       ) : (
         <div className="py-6 space-y-10">
+          {/* SUGGESTED MERGES: faces at the same spot of a video seconds apart, kept apart by grouping */}
+          {shownSuggestions.length > 0 && !merging && (
+            <section>
+              <h2 className="mb-5 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+                <Sparkles size={12} className="text-[var(--accent)]" />
+                <span>Suggested Merges</span>
+                <span className="text-[11px] text-[var(--text-dim)] font-normal tabular-nums">
+                  ({shownSuggestions.length})
+                </span>
+                <span className="text-[11px] text-[var(--text-dim)] font-normal normal-case tracking-normal">
+                  · same spot in a video, seconds apart
+                </span>
+              </h2>
+              <div className="flex flex-wrap gap-4">
+                {shownSuggestions.map(({ key, a, b }) => (
+                  <div
+                    key={key}
+                    className="flex items-center gap-3 p-3 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] shadow-xs"
+                  >
+                    <div className="flex -space-x-3">
+                      {[a, b].map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => navigateToPersonDetail(p.id)}
+                          title={p.name?.trim() || 'Unnamed'}
+                          className="relative overflow-hidden w-12 h-12 rounded-full bg-[var(--surface-2)] border-2 border-[var(--card-bg)] hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-muted)] transition-colors"
+                        >
+                          <User size={18} strokeWidth={1.5} />
+                          <FaceImage src={p.faceRef} />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-xs min-w-0 max-w-[150px]">
+                      <div className="font-semibold text-[var(--text)]">Same person?</div>
+                      <div className="text-[var(--text-muted)] truncate">
+                        {a.name?.trim() || 'Unnamed'} · {b.name?.trim() || 'Unnamed'}
+                      </div>
+                    </div>
+                    <Button
+                      variant="accent"
+                      size="sm"
+                      onClick={() => acceptSuggestion(key, a, b)}
+                      disabled={suggestionBusy !== null}
+                    >
+                      {suggestionBusy === key ? 'Merging...' : 'Merge'}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setDismissed((d) => [...d, key])}
+                      aria-label="Dismiss suggestion"
+                      title="Not the same person"
+                      className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* SECTION 1: NAMED PEOPLE */}
           <section>
             <div className="flex items-center justify-between mb-5">
@@ -355,74 +520,42 @@ export const PeopleView: React.FC = () => {
 
             {unnamedPeople.length === 0 ? (
               <div className="p-8 rounded-2xl bg-[var(--surface-1)] border border-[var(--border)] text-center text-xs text-[var(--text-muted)]">
-                All detected faces have been named!
+                {otherPeople.length > 0
+                  ? 'Only brief appearances left, under Others.'
+                  : 'All detected faces have been named!'}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                {unnamedPeople.map((person) => {
-                  const isEditing = editingId === person.id;
-
-                  return (
-                    <div
-                      key={person.id}
-                      onClick={() =>
-                        merging ? toggleSelected(person.id) : !isEditing && navigateToPersonDetail(person.id)
-                      }
-                      className={`group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs ${selectRing(person.id)}`}
-                    >
-                      {merging && selectMark(person.id)}
-                      {/* Avatar */}
-                      <div className="relative overflow-hidden w-20 h-20 rounded-full bg-[var(--surface-2)] border-2 border-dashed border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors shadow-sm mb-2.5">
-                        <User size={24} strokeWidth={1.5} />
-                        <FaceImage src={person.faceRef} />
-                      </div>
-
-                      {/* Add Name Action */}
-                      {isEditing ? (
-                        <div
-                          className="w-full flex items-center justify-center gap-1 mt-1 px-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="text"
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(person.id, e)}
-                            onBlur={() => saveRename(person.id)}
-                            placeholder="Enter name..."
-                            autoFocus
-                            className="w-full max-w-[120px] bg-[var(--surface-2)] border border-[var(--accent)] rounded px-2 py-1 text-xs text-center text-[var(--text)] font-semibold focus:outline-none placeholder-[var(--text-dim)]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => saveRename(person.id)}
-                            className="p-1 text-[var(--accent)] hover:text-[var(--text)]"
-                          >
-                            <Check size={13} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center text-center w-full px-2">
-                          {!merging && (
-                            <button
-                              type="button"
-                              onClick={(e) => startRename(person, e)}
-                              className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all shadow-xs"
-                            >
-                              <span>+ Add Name</span>
-                            </button>
-                          )}
-                          <span className="text-xs text-[var(--text-muted)] font-medium tabular-nums mt-1">
-                            {person.count} items
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {unnamedPeople.map(unnamedCard)}
               </div>
             )}
           </section>
+
+          {/* SECTION 3: OTHERS, people seen once and briefly. Collapsed by default */}
+          {otherPeople.length > 0 && (
+            <section>
+              <button
+                type="button"
+                onClick={() => setShowOthers(!showOthers)}
+                aria-expanded={showOthers}
+                className="mb-5 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text)] flex items-center gap-1.5 transition-colors"
+              >
+                <ChevronDown size={14} className={`transition-transform ${showOthers ? '' : '-rotate-90'}`} />
+                <span>Others</span>
+                <span className="text-[11px] text-[var(--text-dim)] font-normal tabular-nums">
+                  ({otherPeople.length})
+                </span>
+                <span className="text-[11px] text-[var(--text-dim)] font-normal normal-case tracking-normal">
+                  · seen once, briefly
+                </span>
+              </button>
+              {showOthers && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+                  {otherPeople.map(unnamedCard)}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       )}
     </div>
