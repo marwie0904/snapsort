@@ -21,6 +21,8 @@ MIN_CONFIDENCE = 0.5
 MIN_SIDE = 60    # px on the full-resolution frame
 MAX_YAW = 45     # degrees
 MAX_PITCH = 25   # degrees
+EDGE = 0.02          # a box this close to a frame edge (share of its own size) reaches the edge
+MIN_EYE_SPAN = 0.3   # pupil distance / box width, below which pupils at an edge are squeezed
 
 
 @dataclass
@@ -37,13 +39,27 @@ class Face:
 
 
 def passes_gate(face: Face, width: int, height: int) -> bool:
-    """The design's gate. A missing angle passes its check. No roll check, no quality floor."""
+    """The design's gate, plus faces cut off by the frame edge. A missing angle passes its check.
+    No roll check, no quality floor."""
     return (face.confidence >= MIN_CONFIDENCE
             and face.box[2] * width >= MIN_SIDE and face.box[3] * height >= MIN_SIDE
             and face.left_pupil is not None and face.right_pupil is not None
             and face.nose_and_mouth
+            and not cut_off(face, width, height)
             and (face.yaw is None or abs(face.yaw) <= MAX_YAW)
             and (face.pitch is None or abs(face.pitch) <= MAX_PITCH))
+
+
+def cut_off(face: Face, width: int, height: int) -> bool:
+    """An eye lies outside the frame. Vision then either puts that pupil outside the frame, or keeps the box at
+    the edge and squeezes both pupils into the visible part (pupil distance 0.16-0.28 of the box width there,
+    0.32-0.49 on whole faces). A face cut through the cheek, forehead or chin keeps both eyes and passes."""
+    pupils = (face.left_pupil, face.right_pupil)
+    if any(not (0 <= px <= width and 0 <= py <= height) for px, py in pupils):
+        return True
+    x, y, w, h = face.box
+    at_edge = min(x / w, y / h, (1 - x - w) / w, (1 - y - h) / h) < EDGE
+    return at_edge and math.dist(*pupils) < MIN_EYE_SPAN * w * width
 
 
 def clip_box(box) -> tuple[float, float, float, float]:
@@ -162,7 +178,7 @@ def detect(image: Image.Image) -> list[Face]:
 
 class Faces(Module):
     name = "faces"
-    version = "1"
+    version = "2"  # 2: drops faces cut off by the frame edge
 
     def setup(self) -> None:
         self.model = ct.models.MLModel(str(MODEL), compute_units=ct.ComputeUnit.ALL)

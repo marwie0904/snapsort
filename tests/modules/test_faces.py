@@ -57,6 +57,14 @@ def make_face(**change):
     ({"roll": 80.0}, True),     # no roll check: alignment removes roll
     ({"quality": 0.05}, True),  # no quality floor: closed eyes and selfie video score low
     ({"quality": None}, True),
+    # cut off by the frame edge: 250 px box at the right edge, so pupils closer than 75 px are squeezed
+    ({"box": (0.75, 0.2, 0.25, 0.25), "left_pupil": (900.0, 300.0), "right_pupil": (960.0, 300.0)}, False),
+    ({"box": (0.746, 0.2, 0.25, 0.25), "left_pupil": (900.0, 300.0), "right_pupil": (960.0, 300.0)}, False),
+    ({"box": (0.2, -0.01, 0.3, 0.3), "left_pupil": (300.0, 100.0), "right_pupil": (320.0, 100.0)}, False),
+    ({"box": (0.75, 0.2, 0.25, 0.25), "left_pupil": (850.0, 300.0), "right_pupil": (925.0, 300.0)}, True),
+    ({"box": (0.70, 0.2, 0.25, 0.25), "left_pupil": (750.0, 300.0), "right_pupil": (800.0, 300.0)}, True),  # turned, not at an edge
+    ({"box": (-0.05, 0.2, 0.3, 0.3), "left_pupil": (-5.0, 300.0), "right_pupil": (100.0, 300.0)}, False),
+    ({"left_pupil": (300.0, 1001.0)}, False),
 ])
 def test_gate(change, kept):
     assert passes_gate(make_face(**change), 1000, 1000) is kept
@@ -163,6 +171,15 @@ def test_face_cut_by_frame_edge_gets_clipped_box(faces):
     frame = image_frame(cut)
     [r] = validate(faces.process(frame), frame)  # raw Vision x was -0.17 in the probe
     assert r.bbox[0] == 0.0
+
+
+@needs_faces
+def test_face_cut_through_an_eye_is_dropped(faces):
+    img = load_image(Path(FACE_DIR) / "DJ" / "daniel1.jpg")
+    [r] = faces.process(image_frame(img))
+    x, _, w, _ = r.bbox
+    cut = img.crop((int((x + 0.5 * w) * img.width), 0, img.width, img.height))  # the eye on the left is gone
+    assert faces.process(image_frame(cut)) == []
 
 
 LFW_DIR = os.environ.get("SNAPSORT_LFW_DIR")
