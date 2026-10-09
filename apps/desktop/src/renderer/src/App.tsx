@@ -72,7 +72,7 @@ export const App: React.FC = () => {
         </div>
 
         {/* Scrollable Media Grid Area */}
-        <div className="flex-1 overflow-y-auto pt-2 pr-2">
+        <div className="flex-1 overflow-y-auto pt-2 px-2 -mx-2">
           {isLoading ? (
             <div className="h-64 flex items-center justify-center text-xs text-[#666666]">
               Loading footage...
