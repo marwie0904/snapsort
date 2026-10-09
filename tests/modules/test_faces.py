@@ -157,3 +157,41 @@ def test_face_cut_by_frame_edge_gets_clipped_box(faces):
     frame = image_frame(cut)
     [r] = validate(faces.process(frame), frame)  # raw Vision x was -0.17 in the probe
     assert r.bbox[0] == 0.0
+
+
+LFW_DIR = os.environ.get("SNAPSORT_LFW_DIR")
+
+
+@pytest.mark.skipif(not LFW_DIR, reason="set SNAPSORT_LFW_DIR to a folder with lfw/ and pairs.txt (about 3 min)")
+def test_lfw_pair_accuracy(faces):
+    """Standard 6,000 LFW pairs, 10-fold best-threshold accuracy. The probe measured 99.67%."""
+    root = Path(LFW_DIR)
+    pairs = []
+    for line in (root / "pairs.txt").read_text().splitlines()[1:]:
+        t = line.split("\t")
+        if len(t) == 3:
+            pairs.append((f"{t[0]}/{t[0]}_{int(t[1]):04d}.jpg", f"{t[0]}/{t[0]}_{int(t[2]):04d}.jpg", True))
+        elif len(t) == 4:
+            pairs.append((f"{t[0]}/{t[0]}_{int(t[1]):04d}.jpg", f"{t[2]}/{t[2]}_{int(t[3]):04d}.jpg", False))
+    assert len(pairs) == 6000
+    vec = {}
+    for name in sorted({p for a, b, _ in pairs for p in (a, b)}):
+        results = faces.process(image_frame(load_image(root / "lfw" / name), name))
+        # LFW labels the face whose box holds the image center
+        center = [r for r in results
+                  if r.bbox[0] <= 0.5 <= r.bbox[0] + r.bbox[2] and r.bbox[1] <= 0.5 <= r.bbox[1] + r.bbox[3]]
+        if center:
+            vec[name] = min(center, key=lambda r: (r.bbox[0] + r.bbox[2] / 2 - 0.5) ** 2
+                            + (r.bbox[1] + r.bbox[3] / 2 - 0.5) ** 2).vector
+    usable = [(a, b, same, k // 600) for k, (a, b, same) in enumerate(pairs) if a in vec and b in vec]
+    assert len(usable) >= 5800  # the probe kept 5,840 of 6,000 after the gate
+    score = np.array([float(vec[a] @ vec[b]) for a, b, _, _ in usable])
+    same = np.array([s for _, _, s, _ in usable])
+    fold = np.array([f for _, _, _, f in usable])
+    cuts = np.linspace(0, 1, 201)
+    acc = []
+    for f in range(10):
+        train, test = fold != f, fold == f
+        best = cuts[np.argmax([np.mean((score[train] >= c) == same[train]) for c in cuts])]
+        acc.append(np.mean((score[test] >= best) == same[test]))
+    assert np.mean(acc) >= 0.995, f"10-fold accuracy {np.mean(acc):.4f}"
