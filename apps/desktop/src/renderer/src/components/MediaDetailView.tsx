@@ -7,10 +7,14 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  Plus,
+  Check,
+  Layers,
 } from 'lucide-react';
 import type { MediaSummary } from '@snapsort/contract';
 import { MockSnapsortApi } from '@snapsort/mock';
 import { useUiStore } from '../stores/useUiStore';
+import { useShelfStore } from '../stores/useShelfStore';
 import { MediaCanvas } from './MediaCanvas';
 import { VideoTimelineScrubber } from './VideoTimelineScrubber';
 import { MediaDetailsInspector } from './MediaDetailsInspector';
@@ -49,6 +53,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
     prevMedia,
     openMediaDetail,
   } = useUiStore();
+
+  const { items: shelfItems, addItem, removeItem } = useShelfStore();
+  const inShelf = selectedMediaId !== null && shelfItems.some((s) => s.id === selectedMediaId);
 
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
@@ -161,6 +168,28 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
           >
             {showDetections ? <Eye size={14} /> : <EyeOff size={14} />}
             <span>{showDetections ? 'Detections On' : 'Detections Off'}</span>
+          </button>
+
+          {/* Add to Shelf Button */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!media) return;
+              if (inShelf) {
+                removeItem(media.id);
+              } else {
+                addItem(media);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+              inShelf
+                ? 'bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-ink)] shadow-xs'
+                : 'bg-[var(--surface-1)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)]'
+            }`}
+            title={inShelf ? 'Remove from Shelf' : 'Add to Staging Shelf'}
+          >
+            {inShelf ? <Check size={14} strokeWidth={2.5} /> : <Plus size={14} />}
+            <span>{inShelf ? 'In Shelf' : 'Add to Shelf'}</span>
           </button>
 
           {/* Prev / Next Chevrons */}

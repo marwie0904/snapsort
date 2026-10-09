@@ -11,6 +11,7 @@ import {
   PlaceSummary,
   SidebarCounts,
   SnapsortApi,
+  ShelfItem,
   Thread,
   ThreadDetail,
 } from '@snapsort/contract';
@@ -385,5 +386,71 @@ export class MockSnapsortApi implements SnapsortApi {
     const t = this.threads.find((th) => th.id === id);
     if (!t) throw new Error(`Thread ${id} not found`);
     return t;
+  }
+
+  // Shelf methods
+  private shelfItems: ShelfItem[] = [];
+  private shelfPinned = true;
+  private shelfListeners: Set<(items: ShelfItem[]) => void> = new Set();
+
+  async openShelfWindow(): Promise<void> {
+    // In mock/browser environment, simulated
+  }
+
+  async closeShelfWindow(): Promise<void> {
+    // In mock/browser environment, simulated
+  }
+
+  async toggleShelfPin(pinned?: boolean): Promise<boolean> {
+    this.shelfPinned = pinned !== undefined ? pinned : !this.shelfPinned;
+    return this.shelfPinned;
+  }
+
+  async isShelfPinned(): Promise<boolean> {
+    return this.shelfPinned;
+  }
+
+  async getShelfItems(): Promise<ShelfItem[]> {
+    return [...this.shelfItems];
+  }
+
+  async addToShelf(items: ShelfItem | ShelfItem[]): Promise<ShelfItem[]> {
+    const list = Array.isArray(items) ? items : [items];
+    for (const item of list) {
+      if (!this.shelfItems.some((existing) => existing.id === item.id)) {
+        this.shelfItems.push(item);
+      }
+    }
+    this.notifyShelfListeners();
+    return [...this.shelfItems];
+  }
+
+  async removeFromShelf(id: number): Promise<ShelfItem[]> {
+    this.shelfItems = this.shelfItems.filter((item) => item.id !== id);
+    this.notifyShelfListeners();
+    return [...this.shelfItems];
+  }
+
+  async clearShelf(): Promise<void> {
+    this.shelfItems = [];
+    this.notifyShelfListeners();
+  }
+
+  async startNativeDrag(_filePaths: string[]): Promise<void> {
+    // In browser/mock environment, simulated
+  }
+
+  onShelfSync(callback: (items: ShelfItem[]) => void): () => void {
+    this.shelfListeners.add(callback);
+    callback([...this.shelfItems]);
+    return () => {
+      this.shelfListeners.delete(callback);
+    };
+  }
+
+  private notifyShelfListeners(): void {
+    for (const listener of this.shelfListeners) {
+      listener([...this.shelfItems]);
+    }
   }
 }

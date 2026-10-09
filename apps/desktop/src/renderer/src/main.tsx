@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App';
+import { ShelfWindow } from './components/ShelfWindow';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -13,10 +14,15 @@ const queryClient = new QueryClient({
   },
 });
 
+const isShelfView =
+  typeof window !== 'undefined' &&
+  (new URLSearchParams(window.location.search).get('view') === 'shelf' ||
+    window.location.hash.includes('shelf'));
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      {isShelfView ? <ShelfWindow /> : <App />}
     </QueryClientProvider>
   </React.StrictMode>
 );

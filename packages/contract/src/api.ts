@@ -201,6 +201,16 @@ export type ChatStreamCallback = (event: {
   error?: string;
 }) => void;
 
+export const ShelfItemSchema = z.object({
+  id: z.number().int(),
+  kind: MediaKindSchema,
+  name: z.string(),
+  path: z.string(),
+  durationS: z.number().optional(),
+  thumbUrl: z.string().optional(),
+});
+export type ShelfItem = z.infer<typeof ShelfItemSchema>;
+
 export interface SnapsortApi {
   // library + search
   query(req: {
@@ -239,4 +249,16 @@ export interface SnapsortApi {
   listThreads(): Promise<Thread[]>;
   createThread(title?: string): Promise<Thread>;
   getThread(id: number): Promise<ThreadDetail>;
+
+  // Shelf
+  openShelfWindow(): Promise<void>;
+  closeShelfWindow(): Promise<void>;
+  toggleShelfPin(pinned?: boolean): Promise<boolean>;
+  isShelfPinned(): Promise<boolean>;
+  getShelfItems(): Promise<ShelfItem[]>;
+  addToShelf(items: ShelfItem | ShelfItem[]): Promise<ShelfItem[]>;
+  removeFromShelf(id: number): Promise<ShelfItem[]>;
+  clearShelf(): Promise<void>;
+  startNativeDrag(filePaths: string[]): Promise<void>;
+  onShelfSync?(callback: (items: ShelfItem[]) => void): () => void;
 }

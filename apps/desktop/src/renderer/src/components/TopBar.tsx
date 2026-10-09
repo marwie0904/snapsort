@@ -1,7 +1,8 @@
-import React from 'react';
-import { Search, Image, SlidersHorizontal, Sparkles, PanelLeft } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Search, Image, SlidersHorizontal, Sparkles, PanelLeft, Layers } from 'lucide-react';
 import { ThemeQuickButton } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
+import { useShelfStore } from '../stores/useShelfStore';
 
 export const TopBar: React.FC = () => {
   const {
@@ -17,6 +18,24 @@ export const TopBar: React.FC = () => {
     effectiveTheme,
     cycleTheme,
   } = useUiStore();
+
+  const { items: shelfItems, openShelf, initShelfSync } = useShelfStore();
+
+  useEffect(() => {
+    const cleanup = initShelfSync();
+    return cleanup;
+  }, [initShelfSync]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        openShelf();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [openShelf]);
 
   return (
     <div className="flex items-center gap-3 w-full">
@@ -65,6 +84,22 @@ export const TopBar: React.FC = () => {
       >
         <SlidersHorizontal size={13} className="text-[var(--text-muted)]" />
         <span>Filter</span>
+      </button>
+
+      {/* Shelf Pop-up Window Trigger */}
+      <button
+        type="button"
+        onClick={openShelf}
+        className="flex items-center gap-1.5 px-3.5 py-2 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition-colors select-none shrink-0 group cursor-pointer"
+        title="Open Shelf Pop-up Window (Ctrl+Shift+S / ⌘⇧S)"
+      >
+        <Layers size={13} className="text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors" />
+        <span>Shelf</span>
+        {shelfItems.length > 0 && (
+          <span className="ml-0.5 px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-[var(--accent)] text-[var(--accent-ink)] tabular-nums">
+            {shelfItems.length}
+          </span>
+        )}
       </button>
 
       {/* Quick Theme Toggle Button */}

@@ -61,6 +61,24 @@ const api: SnapsortApi = {
     updatedAt: new Date().toISOString(),
     messages: [],
   }),
+
+  // Shelf
+  openShelfWindow: () => ipcRenderer.invoke('shelf:open'),
+  closeShelfWindow: () => ipcRenderer.invoke('shelf:close'),
+  toggleShelfPin: (pinned) => ipcRenderer.invoke('shelf:togglePin', pinned),
+  isShelfPinned: () => ipcRenderer.invoke('shelf:isPinned'),
+  getShelfItems: () => ipcRenderer.invoke('shelf:getItems'),
+  addToShelf: (items) => ipcRenderer.invoke('shelf:add', items),
+  removeFromShelf: (id) => ipcRenderer.invoke('shelf:remove', id),
+  clearShelf: () => ipcRenderer.invoke('shelf:clear'),
+  startNativeDrag: (filePaths) => ipcRenderer.invoke('shelf:startDrag', filePaths),
+  onShelfSync: (callback) => {
+    const handler = (_event: unknown, items: any) => callback(items);
+    ipcRenderer.on('shelf:sync', handler);
+    return () => {
+      ipcRenderer.removeListener('shelf:sync', handler);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld('snapsort', api);
