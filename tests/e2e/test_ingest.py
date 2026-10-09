@@ -135,6 +135,14 @@ def test_missing_unsupported_and_corrupt_files_skipped(tmp_path, data_dir):
     assert not any((data_dir / "frames").glob("*"))
 
 
+def test_new_image_decoded_once(sample_image, data_dir, monkeypatch):
+    calls = []
+    original = ingest.load_image
+    monkeypatch.setattr(ingest, "load_image", lambda p: calls.append(p) or original(p))
+    assert run_ingest([sample_image], [Counter("a")], data_dir)
+    assert len(calls) == 1
+
+
 def test_ingest_dot_ignores_own_data_dir(tmp_path, sample_video, data_dir):
     (tmp_path / "notes.txt").write_text("ignored silently")
     assert run_ingest([tmp_path], [Counter("a")], data_dir)
