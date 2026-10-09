@@ -14,7 +14,7 @@ from snapsort.ingest import connect, load_image
 GAP = 2.0   # seconds; matches this close merge into one segment, which bridges one missed 1 fps frame
 SORTS = ("relevance", "similarity", "newest", "oldest", "name")
 MIN_SCORE = 0.5   # calibrated on a real folder, see the design's Findings
-TEXT_MIN_SCORE = 0.01   # SigLIP match probability; provisional until calibrated on a real folder
+TEXT_MIN_SCORE = 0.01   # SigLIP match probability, calibrated on a real folder, see the design's Findings
 CHUNK = 900       # media ids per IN (...) query, under SQLite's oldest variable limit (999)
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
