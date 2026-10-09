@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron';
 import { join } from 'path';
+import { existsSync } from 'fs';
 import { registerMediaProtocol } from './mediaProtocol';
 import { MockSnapsortApi } from '@snapsort/mock';
 
@@ -72,12 +73,17 @@ app.on('window-all-closed', () => {
 function createWindow(): void {
   const isMac = process.platform === 'darwin';
 
+  const buildIcon = join(__dirname, '../../build/icon.png');
+  const rootIcon = join(__dirname, '../../../../assets/icon.png');
+  const iconPath = existsSync(buildIcon) ? buildIcon : rootIcon;
+
   const windowOptions: Electron.BrowserWindowConstructorOptions = {
     width: 1380,
     height: 860,
     minWidth: 1024,
     minHeight: 640,
     title: 'snapsort',
+    icon: iconPath,
     show: true,
     backgroundColor: '#0F0F0F',
     webPreferences: {

@@ -21,7 +21,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
   onItemClick,
 }) => {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-12">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-4 pb-12">
       {items.map((item) => {
         // In highlight mode, check if item is a match (score === 1 or 2 people)
         const isMatch = item.score !== undefined ? item.score > 0 : item.faceCount === 2;

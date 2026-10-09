@@ -25,7 +25,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   const variantClasses = {
     accent:
-      'bg-[var(--accent,#FFC400)] text-[var(--accent-ink,#111111)] hover:brightness-105 active:brightness-95 font-semibold',
+      'bg-[#FFC400] text-[#111111] hover:bg-[#E5B000] active:bg-[#CC9D00] font-bold shadow-sm',
     secondary:
       'bg-[var(--surface-2,#1C1C1C)] text-[var(--text,#F5F5F5)] border border-[var(--border,#2A2A2A)] hover:bg-[var(--surface-3,#262626)]',
     ghost:

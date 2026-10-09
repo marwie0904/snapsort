@@ -14,6 +14,7 @@ interface UiState {
   setSort: (sort: 'newest' | 'oldest' | 'relevance' | 'name' | 'similarity') => void;
   setView: (view: 'filter' | 'highlight') => void;
   toggleAiPanel: () => void;
+  setAiPanelOpen: (open: boolean) => void;
   addFilter: (filter: Filter) => void;
   removeFilter: (index: number) => void;
   clearFilters: () => void;
@@ -29,13 +30,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   ],
   sort: 'newest',
   view: 'highlight', // Default to highlight mode to match reference screenshot!
-  aiPanelOpen: true,
+  aiPanelOpen: typeof window !== 'undefined' ? window.innerWidth >= 1200 : true,
 
   setScope: (scope) => set({ scope }),
   setQ: (q) => set({ q }),
   setSort: (sort) => set({ sort }),
   setView: (view) => set({ view }),
   toggleAiPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),
+  setAiPanelOpen: (aiPanelOpen) => set({ aiPanelOpen }),
   addFilter: (filter) =>
     set((state) => ({ filters: [...state.filters, filter] })),
   removeFilter: (index) =>

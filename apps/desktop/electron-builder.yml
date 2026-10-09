@@ -8,6 +8,7 @@ files:
   - package.json
 mac:
   category: public.app-category.photography
+  icon: build/icon.png
   target:
     - target: default
       arch:
@@ -16,6 +17,7 @@ mac:
   hardenedRuntime: true
   gatekeeperAssess: false
 win:
+  icon: build/icon.png
   signAndEditExecutable: false
   target:
     - target: dir

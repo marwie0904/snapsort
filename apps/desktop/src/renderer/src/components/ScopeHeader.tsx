@@ -16,15 +16,15 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
   const { sort, setSort, view, setView } = useUiStore();
 
   return (
-    <div className="flex items-end justify-between pt-4 pb-2">
-      <div>
+    <div className="flex flex-wrap items-end justify-between gap-3 pt-4 pb-2">
+      <div className="min-w-40">
         <h1 className="text-2xl font-bold tracking-tight text-[#F5F5F5]">All footage</h1>
         <p className="text-xs text-[#777777] mt-1 tabular-nums">
           {total} items · {clipsCount} clips · {photosCount} photos
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {/* Highlight vs Filter Toggle */}
         <button
           onClick={() => setView(view === 'highlight' ? 'filter' : 'highlight')}

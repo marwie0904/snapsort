@@ -1,6 +1,7 @@
 import React from 'react';
-import { Wordmark, Button } from '@snapsort/ui';
+import { Button } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
+import wordmarkImg from '../assets/wordmark.png';
 
 interface SidebarProps {
   counts?: {
@@ -21,12 +22,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { scope, setScope } = useUiStore();
 
   return (
-    <aside className="w-64 min-w-64 h-full bg-[#141414] border-r border-[#222222] flex flex-col justify-between p-5 select-none text-sm">
+    <aside className="w-64 min-w-64 shrink-0 h-full bg-[#141414] border-r border-[#222222] flex flex-col justify-between p-5 select-none text-sm">
       {/* Top Section */}
       <div className="space-y-6">
         {/* Wordmark logo */}
-        <div className="pt-1">
-          <Wordmark variant="dot" size="md" />
+        <div className="pt-1 flex items-center">
+          <img
+            src={wordmarkImg}
+            alt="snapsort"
+            className="h-7 w-auto object-contain select-none"
+            draggable={false}
+          />
         </div>
 
         {/* Add folder button */}

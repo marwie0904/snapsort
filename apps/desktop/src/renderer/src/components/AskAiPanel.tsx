@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, X, Sparkles } from 'lucide-react';
 import { useUiStore } from '../stores/useUiStore';
 
 export const AskAiPanel: React.FC = () => {
   const [input, setInput] = useState('');
-  const { addFilter } = useUiStore();
+  const { addFilter, toggleAiPanel } = useUiStore();
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -12,15 +12,28 @@ export const AskAiPanel: React.FC = () => {
   };
 
   return (
-    <aside className="w-80 min-w-80 h-full bg-[#121212] border-l border-[#222222] flex flex-col justify-between p-5 select-none text-xs">
+    <aside className="w-80 min-w-80 shrink-0 h-full bg-[#121212] border-l border-[#222222] flex flex-col justify-between p-5 select-none text-xs">
       {/* Top Header & Chat Messages */}
       <div className="space-y-5 overflow-y-auto pr-1">
         {/* Header */}
-        <div>
-          <h2 className="text-base font-bold text-[#F5F5F5]">Ask AI</h2>
-          <p className="text-[11px] text-[#777777] mt-0.5">
-            Describe what you need. I'll set the filters.
-          </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <Sparkles size={14} className="text-[#FFC400]" />
+              <h2 className="text-base font-bold text-[#F5F5F5]">Ask AI</h2>
+            </div>
+            <p className="text-[11px] text-[#777777] mt-0.5">
+              Describe what you need. I'll set the filters.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleAiPanel}
+            title="Close AI panel"
+            className="p-1 rounded-lg text-[#888888] hover:text-[#F5F5F5] hover:bg-[#222222] transition-colors"
+          >
+            <X size={16} />
+          </button>
         </div>
 
         {/* Chat Thread */}
