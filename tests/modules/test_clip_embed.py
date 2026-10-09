@@ -1,10 +1,11 @@
-"""clip_embed: one CLIP vector per frame."""
+"""clip_embed: one SigLIP 2 vector per frame."""
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from snapsort.ingest import validate
-from snapsort.modules.clip_embed import ClipEmbed
+from snapsort.modules.clip_embed import TEMPLATE, ClipEmbed
 
 
 @pytest.fixture(scope="module")
@@ -36,6 +37,16 @@ def test_text_and_image_same_dim(embedder, sample_frames):
     assert img.shape[1] == txt.shape[1]
     assert img.shape == (1, img.shape[1])
     assert np.isclose(np.linalg.norm(txt[0]), 1, atol=1e-3)
+
+
+def test_match_probability_equals_model_forward(embedder, sample_frames):
+    image = sample_frames[0].image
+    p = embedder.match_probability(embedder.embed_images([image]) @ embedder.embed_text(["a red square"])[0])
+    inputs = embedder.processor(text=[TEMPLATE.format("a red square")], images=[image],
+                                padding="max_length", max_length=64, return_tensors="pt").to(embedder.device)
+    with torch.inference_mode():
+        expected = torch.sigmoid(embedder.model(**inputs).logits_per_image).item()
+    assert np.isclose(p[0], expected, atol=1e-3)
 
 
 def test_odd_inputs_embed(embedder):

@@ -21,7 +21,7 @@ A chatbot with tool calling access to every filter above, so queries like "photo
 |---|---|
 | Ingest pipeline (CLI, frames, module runner, storage) | Done |
 | Location module (GPS + offline place names) | Done |
-| Feature modules | `objects` (YOLO11n), `clip_embed` (CLIP ViT-B/32); people not started |
+| Feature modules | `objects` (YOLO11m), `clip_embed` (SigLIP 2 base); people not started |
 | Text search (`snapsort search`) | Done over stored `clip_embed` vectors |
 | Chatbot | Not started |
 
@@ -43,9 +43,9 @@ uv run snapsort search "people near a bus" --limit 10
 uv run snapsort ingest photos --modules example                 # template module only
 ```
 
-`objects` writes one result per detection (label, score, normalized bbox). `clip_embed` stores one L2-normalized vector per frame. `snapsort search` encodes the query with the same CLIP model and ranks by cosine similarity against stored vectors (requires a prior `clip_embed` ingest).
+`objects` writes one result per detection (label, score, normalized bbox). `clip_embed` stores one L2-normalized vector per frame. `snapsort search` encodes the query as "this is a photo of {query}." with the same SigLIP 2 model and ranks by match probability (0-1) against stored vectors (requires a prior `clip_embed` ingest).
 
-Results go to `.snapsort/` in the current directory: `snapsort.db` (SQLite: `media`, `frames`, `results`, `runs`) and `frames/` (extracted video frames). Delete `.snapsort/` to start over. First run of YOLO/CLIP downloads model weights.
+Results go to `.snapsort/` in the current directory: `snapsort.db` (SQLite: `media`, `frames`, `results`, `runs`) and `frames/` (extracted video frames). Delete `.snapsort/` to start over. First run of YOLO/SigLIP downloads model weights.
 
 Exit codes: `0` all good, `1` a file was skipped or a module failed, `2` configuration error.
 

@@ -21,7 +21,7 @@ class Hit:
 
 
 def search(query: str, data_dir: Path, limit: int = 10) -> list[Hit]:
-    """Rank media by cosine similarity of query text to stored CLIP image vectors."""
+    """Rank media by SigLIP match probability (0-1) of query text against stored image vectors."""
     db = data_dir / "snapsort.db"
     if not db.is_file():
         raise FileNotFoundError(f"no database at {db}; run snapsort ingest --modules clip_embed first")
@@ -58,7 +58,7 @@ def search(query: str, data_dir: Path, limit: int = 10) -> list[Hit]:
             f"re-ingest with {MODULE} version matching the search model"
         )
 
-    scores = matrix @ q
+    scores = clip.match_probability(matrix @ q)
     order = np.argsort(-scores)[: max(0, limit)]
     return [
         Hit(path=paths[i], score=float(scores[i]), frame_idx=int(idxs[i]), ts=tss[i])
