@@ -1,7 +1,7 @@
 # Location module design
 
 Date: 2026-10-09
-Status: draft, awaiting review. Builds on `docs/design/2026-10-09-ingest-pipeline.md`. Branch `location-module`.
+Status: approved. Plan: `docs/plans/2026-10-09-location-module.md`. Builds on `docs/design/2026-10-09-ingest-pipeline.md`. Branch `location-module`.
 
 ## Goal
 
