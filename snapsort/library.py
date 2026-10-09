@@ -5,7 +5,8 @@ import os
 import uuid
 from pathlib import Path
 
-INTERNAL_DATA = Path.home() / "Library" / "Application Support" / "snapsort"
+# the internal disk's library; SNAPSORT_INTERNAL_DATA moves it, e.g. for tests
+INTERNAL_DATA = Path(os.environ.get("SNAPSORT_INTERNAL_DATA") or Path.home() / "Library" / "Application Support" / "snapsort")
 VOLUMES = Path("/Volumes")
 
 

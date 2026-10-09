@@ -72,3 +72,15 @@ def test_stdio_round_trip_and_exit_on_eof(tmp_path):
     assert replies[7]["result"]["all"] >= 0
     assert replies[8]["error"]["code"] == "NOT_FOUND"
     assert "not json" in proc.stderr
+
+
+def test_corrupt_library_is_skipped(tmp_path, monkeypatch):
+    good = drive(tmp_path, "A", [("a.png", "red")])
+    bad = tmp_path / "B" / "snapsort"
+    bad.mkdir(parents=True)
+    (bad / "library.json").write_text('{"id": "00000000-0000-4000-8000-000000000000"}')
+    (bad / "snapsort.db").write_bytes(b"not a database" * 100)
+    monkeypatch.setattr(serve, "mounted", lambda: [good, bad])
+    assert [lib["name"] for lib in call("listLibraries")] == ["A"]
+    assert call("query", search={"f": []}, limit=5)["total"] == 1
+    assert call("getCounts")["all"] == 1

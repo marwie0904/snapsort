@@ -74,7 +74,14 @@ def libraries() -> list[Lib]:
         except (OSError, ValueError, KeyError):
             continue
         external = d != INTERNAL_DATA
-        out.append(Lib(lid, _key(lid), d, root_for(d), d.parent.name if external else "This Mac", external))
+        lib = Lib(lid, _key(lid), d, root_for(d), d.parent.name if external else "This Mac", external)
+        try:  # a corrupt or half-copied database hides that library, not every library
+            with lib.db() as conn:
+                conn.execute("SELECT 1 FROM media LIMIT 1")
+        except sqlite3.DatabaseError as e:
+            print(f"serve: skipping {d}: {e}", file=sys.stderr)
+            continue
+        out.append(lib)
     return out
 
 

@@ -22,7 +22,20 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
     selectedFolderName,
     selectedFolderDrive,
     clearSelectedFolder,
+    q,
+    similarTo,
   } = useUiStore();
+  // A text or image search adds its ranking to the sort cycle
+  type Sort = typeof sort;
+  const ranked: Sort | null = similarTo ? 'similarity' : q.trim() ? 'relevance' : null;
+  const sorts: Sort[] = [...(ranked ? [ranked] : []), 'newest', 'oldest', 'name'];
+  const sortLabel = {
+    relevance: 'Best match',
+    similarity: 'Most similar',
+    newest: 'Newest first',
+    oldest: 'Oldest first',
+    name: 'Name',
+  }[sort];
 
   const title = selectedFolderName
     ? selectedFolderName
@@ -86,15 +99,12 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
 
         {/* Sort Pill */}
         <button
-          onClick={() => {
-            const next = sort === 'newest' ? 'oldest' : sort === 'oldest' ? 'name' : 'newest';
-            setSort(next);
-          }}
+          onClick={() => setSort(sorts[(sorts.indexOf(sort) + 1) % sorts.length])}
           className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition-colors"
         >
           <ArrowUpDown size={12} className="text-[var(--text-muted)]" />
           <span>
-            Sort: {sort === 'newest' ? 'Newest first' : sort === 'oldest' ? 'Oldest first' : 'Name'}
+            Sort: {sortLabel}
           </span>
         </button>
       </div>

@@ -52,6 +52,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
     nextMedia,
     prevMedia,
     openMediaDetail,
+    setSimilarTo,
   } = useUiStore();
 
   const { items: shelfItems, addItem, removeItem } = useShelfStore();
@@ -189,6 +190,24 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
             <span>{showDetections ? 'Detections On' : 'Detections Off'}</span>
           </button>
 
+          {/* Find Similar: back to the library, ranked by visual similarity to this frame */}
+          <button
+            type="button"
+            onClick={() => {
+              setSimilarTo({
+                mediaId: media.id,
+                ts: isVideo ? Math.floor(currentMediaTimestamp) : undefined,
+                source: 'user',
+              });
+              closeMediaDetail();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer bg-[var(--surface-1)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)]"
+            title={isVideo ? 'Find footage that looks like this frame' : 'Find footage that looks like this'}
+          >
+            <Sparkles size={14} />
+            <span>Find similar</span>
+          </button>
+
           {/* Add to Shelf Button */}
           <button
             type="button"
@@ -280,6 +299,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
                 hoveredEntityId={hoveredEntityId}
                 onHoverEntity={setHoveredEntityId}
                 playbackSpeed={playbackSpeed}
+                matches={items.find((i) => i.id === media.id)?.matches?.map((m) => m.ts)}
                 onChangePlaybackSpeed={setPlaybackSpeed}
               />
             </div>

@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import sys
+import traceback
 from pathlib import Path
 
 from snapsort.group import run_grouping
@@ -101,6 +102,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         end.update(code=e.code, message=str(e))
         return 2
+    except Exception as e:  # SystemExit from SIGTERM is not an Exception: a cancel ends without a code
+        traceback.print_exc()
+        if not args.data_dir.exists():  # the drive was pulled; its database is intact, a rescan resumes
+            end.update(code="DRIVE_GONE", message="the drive was disconnected")
+        else:
+            end.update(code="INGEST_FAILED", message=f"{type(e).__name__}: {e}")
+        return 1
     finally:
         emit(end)
 

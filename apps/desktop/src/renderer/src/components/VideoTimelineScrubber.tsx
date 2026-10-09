@@ -23,6 +23,8 @@ interface VideoTimelineScrubberProps {
   onHoverEntity: (id: string | null) => void;
   playbackSpeed: number;
   onChangePlaybackSpeed: (speed: number) => void;
+  /** Seconds the current search matched, marked along the bottom of the track. */
+  matches?: number[];
 }
 
 function formatTime(seconds: number): string {
@@ -44,6 +46,7 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
   onHoverEntity,
   playbackSpeed,
   onChangePlaybackSpeed,
+  matches = [],
 }) => {
   const trackRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -229,6 +232,16 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
             style={{ width: `${progressPercent}%` }}
             className="absolute top-0 bottom-0 left-0 bg-[var(--surface-3)]/70 border-r-2 border-[var(--accent)] transition-[width] duration-75 pointer-events-none"
           />
+
+          {/* Search matches: one accent tick per matched second */}
+          {matches.map((ts) => (
+            <div
+              key={`m-${ts}`}
+              style={{ left: `${(ts / safeDuration) * 100}%`, width: `${Math.max(0.6, 100 / safeDuration)}%` }}
+              className="absolute bottom-0 h-1.5 bg-[var(--accent)] pointer-events-none"
+              title={`Search match at ${formatTime(ts)}`}
+            />
+          ))}
 
           {/* --- COLOR-CODED MARKERS --- */}
           {/* 1. Person Markers (Theme-calibrated Sky/Cyan) */}

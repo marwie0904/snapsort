@@ -205,3 +205,13 @@ def test_frames_are_batched_per_file(sample_video, data_dir, monkeypatch):
 
     assert run_ingest([sample_video], [Sizes("s")], data_dir)
     assert sizes == [2, 1]
+
+
+def test_missing_frames_are_extracted_again(sample_video, data_dir):
+    """A pulled drive can keep the database commit but lose the frame files: the next run redoes the file."""
+    assert run_ingest([sample_video], [Counter("a")], data_dir)
+    (data_dir / "frames.noindex" / "1" / "000002.jpg").unlink()
+    assert run_ingest([sample_video], [Counter("a"), Counter("b")], data_dir) is False  # skipped and forgotten
+    b = Counter("b")
+    assert run_ingest([sample_video], [Counter("a"), b], data_dir)
+    assert b.calls == 1 and q(data_dir, "SELECT count(*) FROM frames") == [(3,)]

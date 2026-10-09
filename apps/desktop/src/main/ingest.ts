@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { existsSync } from 'fs';
 import { createInterface } from 'readline';
 import type { BackendEvent, IngestJob } from '@snapsort/contract';
 import { repoRoot, snapsortCommand } from './sidecar';
@@ -123,15 +124,26 @@ export class IngestQueue {
     const finish = (why?: string) => {
       if (this.running !== run) return;
       this.running = null;
+      const done = () => {
+        this.update(job);
+        this.emit({ type: 'libraries' });
+        this.next();
+      };
       if (run.cancelled) {
         job.state = 'cancelled';
       } else if (!ended) {
+        // A pulled drive can kill the process outright (SQLite's mapped -shm file vanishes), a moment
+        // before the unmount finishes. Look for the drive after that moment.
         job.state = 'failed';
-        job.error = { code: 'CRASHED', message: why ?? 'processing stopped unexpectedly. see the terminal' };
+        setTimeout(() => {
+          job.error = existsSync(job.folderPath)
+            ? { code: 'CRASHED', message: why ?? 'processing stopped unexpectedly. see the terminal' }
+            : { code: 'DRIVE_GONE', message: 'the drive was disconnected' };
+          done();
+        }, 2000);
+        return;
       }
-      this.update(job);
-      this.emit({ type: 'libraries' });
-      this.next();
+      done();
     };
     proc.on('error', (err) => finish(`can't start ${cmd}: ${err.message}`));
     proc.on('exit', () => finish());

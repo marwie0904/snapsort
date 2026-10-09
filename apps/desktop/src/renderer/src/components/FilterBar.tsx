@@ -33,6 +33,7 @@ export const FilterBar: React.FC = () => {
     toggleFacetItem,
     setFacetMatch,
   } = useUiStore();
+  const selectedFolderName = useUiStore((s) => s.selectedFolderName);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -310,6 +311,9 @@ export const FilterBar: React.FC = () => {
         } else if (f.kind === 'mediaKind') {
           label = f.value === 'image' ? 'Photos only' : 'Videos only';
           tooltip = label;
+        } else if (f.kind === 'folder') {
+          label = `Folder: ${selectedFolderName ?? ''}`;
+          tooltip = 'This folder and its subfolders';
         }
 
         return (

@@ -509,11 +509,13 @@ export const useUiStore = create<UiState>((set, get) => ({
   setQ: (q) =>
     set((state) => ({
       q,
+      similarTo: q.trim() ? null : state.similarTo, // one search at a time: text or image
       sort: q.trim() ? (state.sort === 'newest' ? 'relevance' : state.sort) : state.sort === 'relevance' ? 'newest' : state.sort,
     })),
   setSimilarTo: (similarTo) =>
     set((state) => ({
       similarTo,
+      q: similarTo ? '' : state.q,
       sort: similarTo ? 'similarity' : state.sort === 'similarity' ? 'newest' : state.sort,
     })),
   setSort: (sort) => set({ sort }),

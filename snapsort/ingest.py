@@ -326,11 +326,11 @@ def _ingest_file(conn, pool, path, active, ready, dims, data_dir, root) -> bool:
                 if not out.is_file():
                     _preview(f.image, out)
         except Exception as e:
-            if row is None:  # registered by this call: undo it so the next run retries cleanly
-                with conn:
-                    conn.execute("DELETE FROM media WHERE id = ?", (media_id,))
-                shutil.rmtree(data_dir / "frames.noindex" / str(media_id), ignore_errors=True)
-                shutil.rmtree(data_dir / "previews.noindex" / str(media_id), ignore_errors=True)
+            # forget the file so the next run extracts it again: frames can be missing after a drive was pulled
+            with conn:
+                conn.execute("DELETE FROM media WHERE id = ?", (media_id,))
+            shutil.rmtree(data_dir / "frames.noindex" / str(media_id), ignore_errors=True)
+            shutil.rmtree(data_dir / "previews.noindex" / str(media_id), ignore_errors=True)
             return _skip(path, f"cannot read frame: {_msg(e)}")
         futures = {m: pool.submit(_call, m, batch, ready)
                    for m in pending if m in active and m.name not in errors}
