@@ -5,11 +5,15 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from snapsort.group import SCHEMA as GROUP_SCHEMA
-from snapsort.ingest import connect
+from snapsort.ingest import connect, load_image
 
 GAP = 2.0   # seconds; matches this close merge into one segment, which bridges one missed 1 fps frame
 SORTS = ("similarity", "newest", "oldest", "name")
+MIN_SCORE = 0.5   # provisional; Task 4's calibration replaces it and records the evidence in the design's Findings
+CHUNK = 900       # frame ids per IN (...) query, under SQLite's oldest variable limit (999)
 
 FRAMES = ("SELECT f.id, f.media_id, f.ts, m.path, m.kind, m.added_at "
           "FROM frames f JOIN media m ON m.id = f.media_id")
@@ -45,18 +49,22 @@ def open_db(data_dir: Path) -> sqlite3.Connection:
     return conn
 
 
-def search(conn, filters: list[dict], sort: str | None = None,
-           limit: int | None = None, gap: float = GAP) -> list[Hit]:
-    """Media matching every filter, sorted, cut to limit. Raises QueryError (see the design's Errors)."""
-    sort = sort or "newest"
+def search(conn, filters: list[dict], similar: dict | None = None, min_score: float = MIN_SCORE,
+           sort: str | None = None, limit: int | None = None, gap: float = GAP) -> list[Hit]:
+    """Media matching every filter (and similar to the query, when given), sorted, cut to limit.
+    Raises QueryError (see the design's Errors)."""
+    sort = sort or ("similarity" if similar else "newest")
     if sort not in SORTS:
         raise QueryError(f"unknown sort {sort!r}. choose from {', '.join(SORTS)}")
-    if sort == "similarity":
+    if sort == "similarity" and similar is None:
         raise QueryError("sort by similarity needs a similar image")
     if limit is not None and limit < 1:
         raise QueryError(f"limit must be at least 1, got {limit}")
     frames = _filter(conn, filters)
-    scores = None if frames is None else dict.fromkeys(frames)
+    if similar is None:
+        scores = None if frames is None else dict.fromkeys(frames)
+    else:
+        scores = _similar(conn, _query_vector(conn, similar), frames, min_score)
     return _rank(_hits(conn, scores, gap), sort, limit)
 
 
@@ -127,6 +135,53 @@ def _media_kind(conn, f: dict) -> set[int]:
 
 
 FILTERS = {"person": _person, "place": _place, "mediaKind": _media_kind}
+
+
+def _query_vector(conn, similar: dict) -> np.ndarray:
+    """The unit vector frames are compared against: a stored frame's, or a query image's."""
+    if "mediaId" in similar:
+        mid, ts = similar["mediaId"], similar.get("ts")
+        if conn.execute("SELECT 1 FROM media WHERE id = ?", (mid,)).fetchone() is None:
+            raise QueryError(f"unknown media id {mid}")
+        sql = ("SELECT r.vector FROM frames f JOIN results r ON r.frame_id = f.id AND r.module = 'image_embed' "
+               "WHERE f.media_id = ? ORDER BY ")
+        if ts is None:
+            row = conn.execute(sql + "f.idx LIMIT 1", (mid,)).fetchone()
+        else:
+            row = conn.execute(sql + "abs(coalesce(f.ts, 0) - ?), f.idx LIMIT 1", (mid, ts)).fetchone()
+        if row is None:
+            raise QueryError(f"media {mid} has no image_embed vectors. run snapsort ingest --modules image_embed")
+        return np.frombuffer(row[0], "<f4")
+    if "path" in similar:
+        path = Path(similar["path"])
+        try:
+            image = load_image(path)
+        except Exception as e:  # missing, not an image, unreadable
+            raise QueryError(f"cannot read query image {path}: {type(e).__name__}: {e}") from e
+        from snapsort.modules.image_embed import ImageEmbed  # torch loads only for a path query
+        model = ImageEmbed()
+        model.setup()
+        return model.embed([image])[0]
+    raise QueryError("similar needs mediaId or path")
+
+
+def _similar(conn, q: np.ndarray, frames: set[int] | None, min_score: float) -> dict[int, float]:
+    """Frame id -> cosine with q, for frames that have an image_embed vector and score at least min_score.
+    frames None means every frame."""
+    # ponytail: reads every candidate vector per query (~300 MB at 100k frames when no other filter narrows them);
+    # cache the matrix in a file or move to sqlite-vec if queries get slow
+    sql = "SELECT frame_id, vector FROM results WHERE module = 'image_embed'"
+    if frames is None:
+        rows = conn.execute(sql).fetchall()
+    else:
+        ids, rows = list(frames), []
+        for s in range(0, len(ids), CHUNK):
+            chunk = ids[s:s + CHUNK]
+            rows += conn.execute(f"{sql} AND frame_id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+    if not rows:
+        return {}
+    cos = np.stack([np.frombuffer(v, "<f4") for _, v in rows]) @ q
+    return {fid: float(c) for (fid, _), c in zip(rows, cos) if c >= min_score}
 
 
 def _hits(conn, scores: dict[int, float | None] | None, gap: float) -> list[Hit]:

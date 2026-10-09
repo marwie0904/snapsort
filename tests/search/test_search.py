@@ -2,6 +2,7 @@
 import itertools
 import re
 
+import numpy as np
 import pytest
 
 from snapsort.ingest import connect
@@ -183,3 +184,98 @@ def test_library_never_grouped_reports_unknown_person(data_dir):
             search(conn, [{"kind": "person", "ids": [1], "match": "all"}])
     finally:
         conn.close()
+
+
+def unit(v):
+    return v / np.linalg.norm(v)
+
+
+def near(base, cos, rng):
+    """A unit vector at exactly `cos` to the unit vector `base`."""
+    u = rng.normal(size=base.size)
+    u -= (u @ base) * base
+    return cos * base + np.sqrt(1 - cos ** 2) * unit(u)
+
+
+def embed(conn, frame_id, v):
+    with conn:
+        conn.execute("INSERT INTO results (frame_id, module, vector) VALUES (?, 'image_embed', ?)",
+                     (frame_id, np.asarray(v, "<f4").tobytes()))
+
+
+@pytest.fixture
+def q():
+    return unit(np.random.default_rng(0).normal(size=64))
+
+
+@pytest.fixture
+def rng():
+    return np.random.default_rng(1)
+
+
+def test_similar_media_cuts_and_ranks(db, q, rng):
+    query, [fq] = media(db, "image")
+    close, [fc] = media(db, "image")
+    far, [ff] = media(db, "image")
+    embed(db, fq, q)
+    embed(db, fc, near(q, 0.8, rng))
+    embed(db, ff, near(q, 0.1, rng))
+    hits = search(db, [], {"mediaId": query}, min_score=0.5)
+    assert [h.media_id for h in hits] == [query, close]  # similarity is the default sort
+    assert [h.score for h in hits] == pytest.approx([1.0, 0.8], abs=1e-5)
+
+
+def test_similar_scores_video_frames(db, q, rng):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    vid, f = media(db, "video", frames=4)
+    for fid, cos in zip(f, (0.9, 0.2, 0.7, 0.3)):
+        embed(db, fid, near(q, cos, rng))
+    hit = next(h for h in search(db, [], {"mediaId": query}, min_score=0.5) if h.media_id == vid)
+    assert ts_of(hit) == [0.0, 2.0]
+    assert hit.score == pytest.approx(0.9, abs=1e-5) and hit.best_ts == 0.0
+    assert [(s.start, s.end) for s in hit.segments] == [(0.0, 2.0)]  # a 2 s step is bridged
+
+
+def test_similar_media_ts_picks_the_nearest_frame(db, rng):
+    vid, f = media(db, "video", frames=3)
+    for fid in f:
+        embed(db, fid, unit(rng.normal(size=64)))
+    [hit] = search(db, [], {"mediaId": vid, "ts": 2.2}, min_score=0.99)
+    assert ts_of(hit) == [2.0]
+    [hit] = search(db, [], {"mediaId": vid}, min_score=0.99)
+    assert ts_of(hit) == [0.0]  # no ts: frame 0
+
+
+def test_similar_skips_frames_without_a_vector(db, q):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    media(db, "image")  # never embedded
+    assert [h.media_id for h in search(db, [], {"mediaId": query}, min_score=0.0)] == [query]
+
+
+def test_similar_stacks_with_person(db, q, rng):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    vid, f = media(db, "video", frames=2)
+    embed(db, f[0], near(q, 0.9, rng))
+    embed(db, f[1], near(q, 0.8, rng))
+    anna = person(db, [f[1]])
+    [hit] = search(db, [{"kind": "person", "ids": [anna], "match": "all"}], {"mediaId": query}, min_score=0.5)
+    assert hit.media_id == vid and ts_of(hit) == [1.0]
+
+
+def test_similar_errors(db, tmp_path):
+    no_vector, _ = media(db, "image")
+    not_image = tmp_path / "notes.txt"
+    not_image.write_text("hello")
+    cases = [
+        ({"mediaId": 999}, "unknown media id 999"),
+        ({"mediaId": no_vector}, f"media {no_vector} has no image_embed vectors. run snapsort ingest --modules image_embed"),
+        ({"path": str(tmp_path / "missing.jpg")}, "cannot read query image"),
+        ({"path": str(not_image)}, "cannot read query image"),
+        ({"imageRef": "abc"}, "similar needs mediaId or path"),
+    ]
+    for similar, message in cases:
+        with pytest.raises(QueryError, match=re.escape(message)):
+            search(db, [], similar)
