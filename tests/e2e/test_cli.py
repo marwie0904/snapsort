@@ -19,6 +19,14 @@ def test_ingest_video_with_example_module(tmp_path, sample_video):
         assert conn.execute("SELECT count(*) FROM results WHERE module = 'example'").fetchone() == (3,)
 
 
+def test_duplicate_module_names_run_once(tmp_path, sample_video):
+    proc = run("ingest", str(sample_video), "--modules", "example,example", cwd=tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.count("example:done") == 1
+    with sqlite3.connect(tmp_path / ".snapsort" / "snapsort.db") as conn:
+        assert conn.execute("SELECT count(*) FROM results WHERE module = 'example'").fetchone() == (3,)
+
+
 def test_unknown_module_exits_2(tmp_path, sample_video):
     proc = run("ingest", str(sample_video), "--modules", "nope", cwd=tmp_path)
     assert proc.returncode == 2

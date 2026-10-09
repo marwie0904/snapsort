@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.modules:
         by_name = {m.name: m for m in modules}
-        wanted = [n.strip() for n in args.modules.split(",") if n.strip()]
+        wanted = list(dict.fromkeys(n.strip() for n in args.modules.split(",") if n.strip()))
         unknown = [n for n in wanted if n not in by_name]
         if unknown:
             print(f"error: unknown module(s): {', '.join(unknown)}. "
