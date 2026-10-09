@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="persons and similar image must match on the same frame, not anywhere in the file")
     s.add_argument("--place", help="place name (see `snapsort places`)")
     s.add_argument("--kind", choices=("image", "video"))
+    s.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD", help="captured on or after this day")
+    s.add_argument("--to", dest="date_to", metavar="YYYY-MM-DD", help="captured on or before this day")
     similar = s.add_mutually_exclusive_group()
     similar.add_argument("--similar", type=Path, metavar="PATH", help="image to compare frames against")
     similar.add_argument("--similar-media", type=_media_ref, metavar="ID[@TS]",
@@ -108,6 +110,8 @@ def _read(args) -> int:
             filters.append({"kind": "place", "name": args.place})
         if args.kind:
             filters.append({"kind": "mediaKind", "value": args.kind})
+        if args.date_from is not None or args.date_to is not None:
+            filters.append({"kind": "date", "from": args.date_from, "to": args.date_to})
         similar = {"path": str(args.similar)} if args.similar else args.similar_media
         try:
             hits = search(conn, filters, similar, min_score=args.min_score, sort=args.sort, limit=args.limit,
@@ -163,6 +167,7 @@ def _span(seg: Segment) -> str:
 def _json(h: Hit) -> dict:
     """A Hit with the frontend contract's field names where they overlap."""
     return {"id": h.media_id, "kind": h.kind, "path": h.path, "name": Path(h.path).name, "addedAt": h.added_at,
+            "capturedAt": h.captured_at,
             "score": h.score, "matches": [{"ts": t, "score": s} for t, s in h.matches],
             "segments": [{"start": g.start, "end": g.end, "score": g.score} for g in h.segments],
             "bestFrameTs": h.best_ts}

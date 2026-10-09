@@ -514,6 +514,19 @@ def test_cli_or_and_same_frame(db, run):
         (0, "/lib/i.jpg  image\n/lib/v.mov  video  0:01\n2 of 2 files\n", "")
 
 
+def test_cli_date_flags(db, run):
+    _, [f] = media(db, "image", name="july.jpg")
+    captured(db, f, "2026-07-15 10:00:00")
+    _, [g] = media(db, "image", name="aug.jpg")
+    captured(db, g, "2026-08-02 10:00:00")
+    assert run("search", "--from", "2026-07-01", "--to", "2026-07-31") == (0, "/lib/july.jpg  image\n1 of 2 files\n", "")
+    assert run("search", "--from", "2026-08-01") == (0, "/lib/aug.jpg  image\n1 of 2 files\n", "")
+    code, out, _ = run("search", "--to", "2026-07-31", "--json")
+    assert [h["capturedAt"] for h in json.loads(out)] == ["2026-07-15 10:00:00"]
+    code, _, err = run("search", "--to", "2026-7-1")
+    assert code == 2 and "date must be YYYY-MM-DD, got '2026-7-1'" in err
+
+
 def test_cli_search_shows_scores_with_similar(db, run, q):
     query, [fq] = media(db, "image", name="q.jpg")
     embed(db, fq, q)
@@ -537,7 +550,8 @@ def test_cli_search_json(db, run, q):
     code, out, _ = run("search", "--similar-media", str(query), "--json")
     assert code == 0
     assert json.loads(out) == [{"id": query, "kind": "image", "path": "/lib/q.jpg", "name": "q.jpg",
-                                "addedAt": "2026-10-09 10:00:00", "score": pytest.approx(1.0, abs=1e-5),
+                                "addedAt": "2026-10-09 10:00:00", "capturedAt": None,
+                                "score": pytest.approx(1.0, abs=1e-5),
                                 "matches": [], "segments": [], "bestFrameTs": None}]
 
 
