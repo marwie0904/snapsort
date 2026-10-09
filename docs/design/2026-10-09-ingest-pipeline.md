@@ -159,7 +159,7 @@ The runner checks every `Result` before storing it with `validate(results, frame
 - Import every module file in `snapsort/modules/` via `pkgutil.iter_modules`, skipping names that start with `_`.
 - Collect each `Module` subclass defined in that file and instantiate it with no arguments.
 - A file that fails to import (for example, a missing dependency) is skipped with a warning, so one broken module doesn't block the rest.
-- Duplicate or invalid `name` → exit code 2 at startup.
+- Duplicate or invalid `name`, or a `version` that is not a non-empty `str` → exit code 2 at startup. A non-string version would never match the stored `runs.version` text, so the module would reprocess everything on every run.
 - Add a module: add a file. Disable: rename to `_<name>.py`. Remove: delete the file.
 - `--modules a,b` limits the run to those names. An unknown name → exit code 2, listing the available names.
 

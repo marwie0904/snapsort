@@ -14,7 +14,8 @@ NAME = re.compile(r"[a-z0-9_]+")
 
 def discover(package: str = __name__) -> list[Module]:
     """Instances of every Module in the package, sorted by name. A file that fails to import
-    is skipped with a warning. Raises ValueError on an invalid or duplicate name."""
+    is skipped with a warning. Raises ValueError on an invalid or duplicate name or a
+    version that is not a non-empty str."""
     pkg = importlib.import_module(package)
     found: list[Module] = []
     for info in pkgutil.iter_modules(pkg.__path__):
@@ -32,6 +33,9 @@ def discover(package: str = __name__) -> list[Module]:
     bad = [n for n in names if not isinstance(n, str) or not NAME.fullmatch(n)]
     if bad:
         raise ValueError(f"invalid module name(s) {bad}: must match [a-z0-9_]+")
+    bad = [m.name for m in found if not isinstance(m.version, str) or not m.version]
+    if bad:
+        raise ValueError(f"invalid version in module(s) {bad}: must be a non-empty str")
     dupes = sorted({n for n in names if names.count(n) > 1})
     if dupes:
         raise ValueError(f"duplicate module name(s): {', '.join(dupes)}")

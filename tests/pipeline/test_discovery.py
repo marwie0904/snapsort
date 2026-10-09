@@ -52,3 +52,11 @@ def test_rejects_invalid_names(tmp_path, monkeypatch):
     pkg = make_package(tmp_path, monkeypatch, {"one.py": MODULE_SRC.format(name="Bad-Name")})
     with pytest.raises(ValueError, match="invalid"):
         discover(pkg)
+
+
+@pytest.mark.parametrize("version", [2, ""])
+def test_rejects_non_string_or_empty_versions(tmp_path, monkeypatch, version):
+    src = MODULE_SRC.format(name="one") + f"    version = {version!r}\n"
+    pkg = make_package(tmp_path, monkeypatch, {"one.py": src})
+    with pytest.raises(ValueError, match="version"):
+        discover(pkg)
