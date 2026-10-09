@@ -101,7 +101,7 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
                 : 'bg-sky-500/15 text-sky-700 dark:text-[#38BDF8] dark:bg-[#38BDF8]/15 border border-sky-500/30 dark:border-[#38BDF8]/30'
             }`}
           >
-            {isVideo ? '4K Video' : 'Photo'}
+            {isVideo ? (media.height >= 2160 ? '4K Video' : 'Video') : 'Photo'}
           </span>
         </div>
 

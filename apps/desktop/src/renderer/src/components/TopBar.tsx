@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Search, Image, SlidersHorizontal, Sparkles, PanelLeft, Layers, X, HelpCircle } from 'lucide-react';
+import { Search, Image, Sparkles, PanelLeft, Layers, X, HelpCircle } from 'lucide-react';
 import { ThemeQuickButton } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
 import { useShelfStore } from '../stores/useShelfStore';
@@ -158,15 +158,6 @@ export const TopBar: React.FC = () => {
         </button>
       </div>
 
-      {/* Filter Button */}
-      <button
-        type="button"
-        aria-label="Filter options"
-        className="flex items-center gap-1.5 px-4 py-2 bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-focus)] rounded-full text-xs font-semibold text-[var(--text)] transition-colors select-none shrink-0"
-      >
-        <SlidersHorizontal size={13} className="text-[var(--text-muted)]" />
-        <span>Filter</span>
-      </button>
 
       {/* Shelf Pop-up Window Trigger */}
       <button

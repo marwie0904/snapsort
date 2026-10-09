@@ -54,7 +54,7 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
               : `snapsort-media://preview/${media.id}`
           }
           alt={media.name}
-          className="absolute inset-0 w-full h-full object-contain z-0"
+          className="absolute inset-0 w-full h-full object-contain z-[1]"
           onError={(e) => {
             (e.currentTarget as HTMLElement).style.display = 'none';
           }}
@@ -73,7 +73,7 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
             {media.name}
           </span>
           <span className="text-xs text-[var(--text-muted)] mt-1 font-mono">
-            {media.width} × {media.height} · {isVideo ? `${formatDuration(media.durationS)} (4K UHD)` : 'Full Resolution Photo'}
+            {media.width} × {media.height} · {isVideo ? `${formatDuration(media.durationS)}${media.height >= 2160 ? ' (4K UHD)' : ''}` : 'Full Resolution Photo'}
           </span>
         </div>
       </div>
