@@ -1,9 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { FilterPill } from '@snapsort/ui';
 import { useUiStore, QuickAction } from '../stores/useUiStore';
-import { Zap, X, Edit2, Check } from 'lucide-react';
+import { MockSnapsortApi } from '@snapsort/mock';
+import { Zap, X, Edit2, Check, Users, ChevronDown, CheckSquare, Square, ArrowUpRight } from 'lucide-react';
+import type { Filter } from '@snapsort/contract';
+
+const mockApiFallback = new MockSnapsortApi();
+
+function getApi() {
+  if (typeof window !== 'undefined' && window.snapsort) {
+    return window.snapsort;
+  }
+  return mockApiFallback;
+}
 
 export const FilterBar: React.FC = () => {
+  const api = useMemo(() => getApi(), []);
   const {
     filters,
     removeFilter,
@@ -13,10 +26,54 @@ export const FilterBar: React.FC = () => {
     applyQuickAction,
     removeQuickAction,
     renameQuickAction,
+    togglePersonFilter,
+    navigateToPeople,
+    customPeopleNames,
   } = useUiStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [peoplePopoverOpen, setPeoplePopoverOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Fetch people list for picker
+  const { data: rawPeople = [] } = useQuery({
+    queryKey: ['people'],
+    queryFn: () => api.listPeople(),
+  });
+
+  const people = useMemo(() => {
+    return rawPeople.map((p) => {
+      const custom = customPeopleNames[p.id];
+      return {
+        ...p,
+        name: custom !== undefined ? custom || 'Unnamed Face' : p.name || 'Unnamed Face',
+      };
+    });
+  }, [rawPeople, customPeopleNames]);
+
+  // Click outside listener for people popover
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setPeoplePopoverOpen(false);
+      }
+    }
+    if (peoplePopoverOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [peoplePopoverOpen]);
+
+  // Find currently active person IDs
+  const activePersonIds = useMemo(() => {
+    const personFilter = filters.find((f) => f.kind === 'person') as
+      | Extract<Filter, { kind: 'person' }>
+      | undefined;
+    return personFilter?.ids || [];
+  }, [filters]);
 
   const startRename = (qa: QuickAction, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -42,7 +99,81 @@ export const FilterBar: React.FC = () => {
   return (
     <div className="flex items-center gap-2 py-3 overflow-x-auto no-scrollbar select-none text-xs">
       {/* 1. Standard Facet Pickers */}
-      <FilterPill label="People" />
+      {/* Interactive People Popover */}
+      <div className="relative shrink-0" ref={popoverRef}>
+        <div
+          onClick={() => setPeoplePopoverOpen(!peoplePopoverOpen)}
+          role="button"
+          tabIndex={0}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+            activePersonIds.length > 0 || peoplePopoverOpen
+              ? 'bg-[#FFC400] text-[#111111] font-semibold shadow-sm'
+              : 'bg-[#1C1C1C] text-[#F5F5F5] border border-[#2A2A2A] hover:border-[#8A8A8A]'
+          }`}
+        >
+          <Users size={12} className={activePersonIds.length > 0 ? 'text-[#111111]' : 'text-[#888888]'} />
+          <span>People</span>
+          {activePersonIds.length > 0 && (
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/15 text-black tabular-nums">
+              {activePersonIds.length}
+            </span>
+          )}
+          <ChevronDown size={11} className={`transition-transform duration-150 ${peoplePopoverOpen ? 'rotate-180' : ''}`} />
+        </div>
+
+        {/* Dropdown Popover */}
+        {peoplePopoverOpen && (
+          <div className="absolute top-full left-0 mt-2 w-64 bg-[#181818] border border-[#2E2E2E] rounded-2xl shadow-2xl p-2 z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
+            <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-[#242424] text-[11px] font-bold text-[#888888] uppercase tracking-wider">
+              <span>Select People</span>
+              <span className="text-[#666666] font-normal tabular-nums">{people.length} total</span>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto py-1 space-y-0.5">
+              {people.map((p) => {
+                const isSelected = activePersonIds.includes(p.id);
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => togglePersonFilter(p.id)}
+                    className="flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#222222] cursor-pointer text-[#D5D5D5] transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isSelected ? (
+                        <CheckSquare size={13} className="text-[#FFC400] shrink-0" />
+                      ) : (
+                        <Square size={13} className="text-[#666666] shrink-0" />
+                      )}
+                      <span className={`truncate text-xs ${isSelected ? 'text-[#F5F5F5] font-semibold' : ''}`}>
+                        {p.name}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#777777] font-medium tabular-nums shrink-0 ml-2">
+                      {p.count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Link to full People & Faces view */}
+            <div className="pt-1.5 mt-1 border-t border-[#242424]">
+              <button
+                type="button"
+                onClick={() => {
+                  setPeoplePopoverOpen(false);
+                  navigateToPeople();
+                }}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold text-[#FFC400] hover:bg-[#222222] transition-colors"
+              >
+                <span>Manage all faces</span>
+                <ArrowUpRight size={12} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <FilterPill label="Scene" />
       <FilterPill label="Tags" />
 
@@ -136,15 +267,11 @@ export const FilterBar: React.FC = () => {
       {filters.map((f, i) => {
         let label = 'Filter';
         if (f.kind === 'person') {
-          if (f.ids.length === 2 && f.ids.includes(1) && f.ids.includes(2)) {
-            label = 'Groom + Bride';
-          } else if (f.ids.length === 1 && f.ids.includes(2)) {
-            label = 'Person: Bride';
-          } else if (f.ids.length === 1 && f.ids.includes(1)) {
-            label = 'Person: Groom';
-          } else {
-            label = `Person (${f.ids.join(',')})`;
-          }
+          const names = f.ids.map((id) => {
+            const p = people.find((person) => person.id === id);
+            return p?.name || `Person #${id}`;
+          });
+          label = names.length > 0 ? names.join(' + ') : 'Person';
         } else if (f.kind === 'label') {
           if (f.labelId === 'flowers') label = 'Object: Flowers';
           else if (f.labelId === 'cake') label = 'Object: Cake';

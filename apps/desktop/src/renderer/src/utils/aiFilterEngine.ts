@@ -38,7 +38,10 @@ const KNOWN_LABELS: LabelEntity[] = [
   { id: 'car', name: 'Vintage Car', patterns: [/\bcar(s)?\b/i, /\bvintage car\b/i, /\bautomobile\b/i] },
 ];
 
-export function parsePromptToFilters(rawPrompt: string): ParsedAiFilterResult {
+export function parsePromptToFilters(
+  rawPrompt: string,
+  customPeople?: Record<number, string>
+): ParsedAiFilterResult {
   const prompt = rawPrompt.trim();
   const lower = prompt.toLowerCase();
 
@@ -47,6 +50,32 @@ export function parsePromptToFilters(rawPrompt: string): ParsedAiFilterResult {
   const matchedPersonIds: number[] = [];
   const matchedPersonNames: string[] = [];
   const matchedLabels: { id: string; name: string }[] = [];
+
+  // Build combined people list with custom names
+  const allPeople: PersonEntity[] = [...KNOWN_PEOPLE];
+  if (customPeople) {
+    for (const [idStr, customName] of Object.entries(customPeople)) {
+      const id = Number(idStr);
+      const trimmed = customName.trim();
+      if (!trimmed) continue;
+      const existingIdx = allPeople.findIndex((p) => p.id === id);
+      const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`\\b${escaped}\\b`, 'i');
+      if (existingIdx >= 0) {
+        allPeople[existingIdx] = {
+          id,
+          name: trimmed,
+          patterns: [pattern],
+        };
+      } else {
+        allPeople.push({
+          id,
+          name: trimmed,
+          patterns: [pattern],
+        });
+      }
+    }
+  }
 
   // 1. Detect media kind scope
   let scope: 'all' | 'images' | 'videos' = 'all';
@@ -64,7 +93,7 @@ export function parsePromptToFilters(rawPrompt: string): ParsedAiFilterResult {
   }
 
   // 2. Detect People
-  for (const person of KNOWN_PEOPLE) {
+  for (const person of allPeople) {
     if (person.patterns.some((p) => p.test(lower))) {
       matchedPersonIds.push(person.id);
       matchedPersonNames.push(person.name);

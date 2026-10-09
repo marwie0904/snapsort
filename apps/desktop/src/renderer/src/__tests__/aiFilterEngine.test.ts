@@ -62,4 +62,26 @@ describe('aiFilterEngine', () => {
     expect(result.suggestedTitle).toBeTruthy();
     expect(result.summaryDescriptions.length).toBeGreaterThan(0);
   });
+
+  it('recognizes dynamically named custom people', () => {
+    const customPeople = {
+      6: 'Uncle Bob',
+    };
+    const result = parsePromptToFilters('photos of Uncle Bob with wedding cake', customPeople);
+
+    const personFilter = result.filters.find((f) => f.kind === 'person');
+    expect(personFilter).toBeDefined();
+    if (personFilter && personFilter.kind === 'person') {
+      expect(personFilter.ids).toContain(6);
+    }
+
+    const labelFilter = result.filters.find((f) => f.kind === 'label');
+    expect(labelFilter).toBeDefined();
+    if (labelFilter && labelFilter.kind === 'label') {
+      expect(labelFilter.labelId).toBe('cake');
+    }
+
+    expect(result.summaryDescriptions).toContain('Includes: Uncle Bob');
+  });
 });
+

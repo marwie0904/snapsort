@@ -26,6 +26,18 @@ interface UiState {
   view: 'filter' | 'highlight';
   aiPanelOpen: boolean;
 
+  // View navigation
+  currentView: 'library' | 'people' | 'person-detail';
+  selectedPersonId: number | null;
+  customPeopleNames: Record<number, string>;
+
+  navigateToPeople: () => void;
+  navigateToPersonDetail: (id: number) => void;
+  navigateToLibrary: () => void;
+  setPersonName: (id: number, name: string) => void;
+  togglePersonFilter: (personId: number) => void;
+  filterByPersonAndNavigate: (personId: number) => void;
+
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setActiveTab: (tab: 'library' | 'folders') => void;
@@ -78,6 +90,88 @@ export const useUiStore = create<UiState>((set, get) => ({
   sort: 'newest',
   view: 'highlight', // Default to highlight mode to match reference screenshot!
   aiPanelOpen: typeof window !== 'undefined' ? window.innerWidth >= 1200 : true,
+
+  currentView: 'library',
+  selectedPersonId: null,
+  customPeopleNames: {},
+
+  navigateToPeople: () =>
+    set({
+      currentView: 'people',
+      selectedPersonId: null,
+    }),
+
+  navigateToPersonDetail: (id: number) =>
+    set({
+      currentView: 'person-detail',
+      selectedPersonId: id,
+    }),
+
+  navigateToLibrary: () =>
+    set({
+      currentView: 'library',
+      selectedPersonId: null,
+    }),
+
+  setPersonName: (id: number, name: string) =>
+    set((state) => {
+      const trimmed = name.trim();
+      return {
+        customPeopleNames: {
+          ...state.customPeopleNames,
+          [id]: trimmed,
+        },
+      };
+    }),
+
+  togglePersonFilter: (personId: number) =>
+    set((state) => {
+      const existingIndex = state.filters.findIndex((f) => f.kind === 'person');
+      if (existingIndex === -1) {
+        return {
+          filters: [
+            ...state.filters,
+            { kind: 'person', ids: [personId], match: 'all', source: 'user' },
+          ],
+          activeQuickActionId: null,
+        };
+      }
+      const existing = state.filters[existingIndex] as Extract<Filter, { kind: 'person' }>;
+      const hasId = existing.ids.includes(personId);
+      const newIds = hasId
+        ? existing.ids.filter((id) => id !== personId)
+        : [...existing.ids, personId];
+
+      if (newIds.length === 0) {
+        return {
+          filters: state.filters.filter((_, idx) => idx !== existingIndex),
+          activeQuickActionId: null,
+        };
+      }
+      const updatedFilters = [...state.filters];
+      updatedFilters[existingIndex] = {
+        ...existing,
+        ids: newIds,
+      };
+      return {
+        filters: updatedFilters,
+        activeQuickActionId: null,
+      };
+    }),
+
+  filterByPersonAndNavigate: (personId: number) =>
+    set((state) => {
+      const withoutPerson = state.filters.filter((f) => f.kind !== 'person');
+      return {
+        currentView: 'library',
+        selectedPersonId: null,
+        filters: [
+          ...withoutPerson,
+          { kind: 'person', ids: [personId], match: 'all', source: 'user' },
+        ],
+        activeQuickActionId: null,
+      };
+    }),
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),

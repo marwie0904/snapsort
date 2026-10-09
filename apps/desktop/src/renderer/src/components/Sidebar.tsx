@@ -11,6 +11,7 @@ import {
   Layers,
   Laptop,
   PanelLeftClose,
+  Users,
 } from 'lucide-react';
 import { Button } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
@@ -60,6 +61,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     selectedFolderId,
     selectFolder,
     clearSelectedFolder,
+    currentView,
+    navigateToPeople,
+    navigateToLibrary,
   } = useUiStore();
 
   const [driveExpanded, setDriveExpanded] = useState(true);
@@ -161,10 +165,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={() => {
                     clearSelectedFolder();
+                    navigateToLibrary();
                     setScope('all');
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                    scope === 'all' && !selectedFolderId
+                    currentView === 'library' && scope === 'all' && !selectedFolderId
                       ? 'bg-[#222222] text-[#F5F5F5]'
                       : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
                   }`}
@@ -178,10 +183,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={() => {
                     clearSelectedFolder();
+                    navigateToLibrary();
                     setScope('images');
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                    scope === 'images' && !selectedFolderId
+                    currentView === 'library' && scope === 'images' && !selectedFolderId
                       ? 'bg-[#222222] text-[#F5F5F5]'
                       : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
                   }`}
@@ -195,10 +201,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={() => {
                     clearSelectedFolder();
+                    navigateToLibrary();
                     setScope('videos');
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                    scope === 'videos' && !selectedFolderId
+                    currentView === 'library' && scope === 'videos' && !selectedFolderId
                       ? 'bg-[#222222] text-[#F5F5F5]'
                       : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
                   }`}
@@ -208,6 +215,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span>Videos</span>
                   </div>
                   <span className="tabular-nums text-[#888888] font-normal">{counts.videos}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    clearSelectedFolder();
+                    navigateToPeople();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    (currentView === 'people' || currentView === 'person-detail') && !selectedFolderId
+                      ? 'bg-[#222222] text-[#F5F5F5]'
+                      : 'text-[#AAAAAA] hover:text-[#F5F5F5] hover:bg-[#1A1A1A]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Users
+                      size={14}
+                      className={
+                        (currentView === 'people' || currentView === 'person-detail') && !selectedFolderId
+                          ? 'text-[#FFC400]'
+                          : 'text-[#888888]'
+                      }
+                    />
+                    <span>People & Faces</span>
+                  </div>
+                  <span className="tabular-nums text-[#888888] font-normal">{counts.people}</span>
                 </button>
               </div>
             </div>

@@ -39,6 +39,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
     applyQuickAction,
     setScope,
     toggleAiPanel,
+    customPeopleNames,
   } = useUiStore();
 
   // Initial conversation preserved from design reference
@@ -91,7 +92,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
     setIsThinking(true);
 
     // Parse prompt with client-side NLP
-    const parsed: ParsedAiFilterResult = parsePromptToFilters(userText);
+    const parsed: ParsedAiFilterResult = parsePromptToFilters(userText, customPeopleNames);
 
     // Auto-apply filters immediately as aligned during grilling
     if (parsed.filters.length > 0) {

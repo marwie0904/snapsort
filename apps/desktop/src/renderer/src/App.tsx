@@ -6,6 +6,8 @@ import { ScopeHeader } from './components/ScopeHeader';
 import { FilterBar } from './components/FilterBar';
 import { MediaGrid } from './components/MediaGrid';
 import { AskAiPanel } from './components/AskAiPanel';
+import { PeopleView } from './components/PeopleView';
+import { PersonDetailView } from './components/PersonDetailView';
 import { useUiStore } from './stores/useUiStore';
 import { MockSnapsortApi } from '@snapsort/mock';
 
@@ -21,7 +23,7 @@ function getApi() {
 
 export const App: React.FC = () => {
   const api = useMemo(() => getApi(), []);
-  const { getSearchQuery, view, aiPanelOpen } = useUiStore();
+  const { getSearchQuery, view, aiPanelOpen, currentView, selectedPersonId } = useUiStore();
   const searchQuery = getSearchQuery();
 
   // Fetch Sidebar Counts
@@ -53,34 +55,47 @@ export const App: React.FC = () => {
       {/* 2. Center Content Area */}
       <main className="flex-1 h-full flex flex-col min-w-0 overflow-hidden px-8 pt-6">
         {/* Top Search & Filter Bar */}
-        <div className="shrink-0">
+        <div className="shrink-0 mb-2">
           <TopBar />
         </div>
 
-        {/* Scope Header */}
-        <div className="shrink-0">
-          <ScopeHeader
-            total={total}
-            clipsCount={clipsCount}
-            photosCount={photosCount}
-          />
-        </div>
-
-        {/* Filter Pills Bar */}
-        <div className="shrink-0">
-          <FilterBar />
-        </div>
-
-        {/* Scrollable Media Grid Area */}
-        <div className="flex-1 overflow-y-auto pt-2 px-2 -mx-2">
-          {isLoading ? (
-            <div className="h-64 flex items-center justify-center text-xs text-[#666666]">
-              Loading footage...
+        {/* View Switcher: People View vs Person Detail vs Media Library */}
+        {currentView === 'people' ? (
+          <div className="flex-1 overflow-hidden flex flex-col pt-2">
+            <PeopleView />
+          </div>
+        ) : currentView === 'person-detail' && selectedPersonId !== null ? (
+          <div className="flex-1 overflow-hidden flex flex-col pt-2">
+            <PersonDetailView personId={selectedPersonId} />
+          </div>
+        ) : (
+          <>
+            {/* Scope Header */}
+            <div className="shrink-0">
+              <ScopeHeader
+                total={total}
+                clipsCount={clipsCount}
+                photosCount={photosCount}
+              />
             </div>
-          ) : (
-            <MediaGrid items={items} viewMode={view} />
-          )}
-        </div>
+
+            {/* Filter Pills Bar */}
+            <div className="shrink-0">
+              <FilterBar />
+            </div>
+
+            {/* Scrollable Media Grid Area */}
+            <div className="flex-1 overflow-y-auto pt-2 px-2 -mx-2">
+              {isLoading ? (
+                <div className="h-64 flex items-center justify-center text-xs text-[#666666]">
+                  Loading footage...
+                </div>
+              ) : (
+                <MediaGrid items={items} viewMode={view} />
+              )}
+            </div>
+          </>
+        )}
       </main>
 
       {/* 3. Right Ask AI Panel */}

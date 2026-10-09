@@ -3,7 +3,16 @@ import { Search, Image, SlidersHorizontal, Sparkles, PanelLeft } from 'lucide-re
 import { useUiStore } from '../stores/useUiStore';
 
 export const TopBar: React.FC = () => {
-  const { q, setQ, aiPanelOpen, toggleAiPanel, sidebarOpen, toggleSidebar } = useUiStore();
+  const {
+    q,
+    setQ,
+    aiPanelOpen,
+    toggleAiPanel,
+    sidebarOpen,
+    toggleSidebar,
+    currentView,
+    navigateToLibrary,
+  } = useUiStore();
 
   return (
     <div className="flex items-center gap-3 w-full">
@@ -27,7 +36,12 @@ export const TopBar: React.FC = () => {
         <input
           type="text"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            if (currentView !== 'library') {
+              navigateToLibrary();
+            }
+          }}
           placeholder="Search what's said, what's on screen, who's in it"
           className="bg-transparent border-none outline-none w-full min-w-0 text-xs text-[#E5E5E5] placeholder-[#777777]"
         />
