@@ -34,7 +34,7 @@ Measured on 2026-10-09 with the probe's cached LFW embeddings (13,039 gated face
    - A first ingest of a family library can hold thousands of photos of one child.
    - With batches, steps 3–5 run per batch, and a batch's appearances can join persons that earlier batches created.
    - On the LFW two-pass run, batch 500 and one graph give the same pair precision (99.96%) and the same mixed groups (1). Main-group share is 96.93% with batches and 96.99% with one graph.
-2. **The LFW two-pass floor for main-group share is 96%, not 97%.**
+2. **The LFW two-pass floor for main-group share is 95%, not 97%.** It was 96% from the probe's embeddings, then set to the module's measured 95.40% after the real run (see "Notes from the real-face run").
    - The design's 97% came from single-pass grouping, which measures 97.99%. Two passes measure 96.99% even without batches, so the design's check fails as written.
    - The drop is built into incremental grouping. Matching against every stored appearance instead of 20 centroids gives the same 96.93%. A new face that links to its person only through other new faces starts a new person.
 3. **`run_grouping` re-picks a NULL `face_id` on every call**, including calls with no unassigned faces. It costs one UPDATE. Without it, a person whose representative face a re-ingest deleted has no `faceRef` until new faces arrive.
@@ -935,7 +935,33 @@ git commit -m "Add env-gated grouping checks on labeled photos and LFW"
 ## Done criteria for phase 2 (from the design, with deviation 2)
 
 - All tests pass, including:
-  - exactly 3 persons on voogle's photo set
-  - the LFW two-pass check: pair precision ≥ 99.5%, at most 1 mixed group, main-group share ≥ 96%
+  - voogle's photo set grouped with no mixing: 4 persons, because one Andrea photo splits off (see the notes below)
+  - the LFW two-pass check: pair precision ≥ 99.5%, at most 1 mixed group, main-group share ≥ 95%
   - deviation 4 within 5% of the full rebuild on LFW, after 2 passes and after a full re-ingest
 - The manual run on the phase 1 database gives the expected persons, with no mixed row on the sheet.
+
+## Notes from the real-face run (2026-10-09)
+
+The user chose to keep the 0.55 cut-off. Two checks were set to what the module measured: the labeled set gives 4 persons, and the LFW share floor is 95%.
+
+**The module's LFW faces, two passes, at several cut-offs** (probe `p25_cutoff_module.py`):
+
+| Cut-off | Pair precision | Main-group share | Labeled photos |
+|---|---|---|---|
+| 0.55 (kept) | 99.95% | 95.40% | 4 persons (Andrea split) |
+| 0.54 | 99.91% | 95.76% | 3 persons |
+| 0.53 | 99.90% | 96.19% | 3 persons |
+| 0.52 | 99.90% | 96.73% | 3 persons |
+| 0.50 | 99.90% | 97.42% | 3 persons |
+
+- The only mixed group at every cut-off is Sepp/Joseph Blatter, one man under two names.
+- Lower cut-offs split fewer photos off their person, but wrongly paired photos rise from 0.05% to 0.10%. v1 cannot undo a merge.
+- The probe's cached embeddings measured 96.93% at 0.55. The module is lower, likely because it groups every face in a photo, including background faces, while the probe grouped only the centred face.
+
+**Splits seen on phase 1's data** (19 photos and 1 video, 6 persons, no mixed person):
+- One Andrea photo scores 0.546 against her other photos and becomes its own person.
+- A 3-second head turn in the video (yaw 29–41°) becomes its own person. Its best match to the main person is 0.31–0.42, which is in the range of two different people, so no cut-off can join it. Its face box overlaps the main person's box one second before or after (overlap 0.40–0.62).
+
+**Options left open:**
+- **`listPeople` rule:** showing only persons seen in 2 or more files hides both splits above. It is still an open design decision for the API layer.
+- **Position linking within a video:** treat faces whose boxes overlap one second apart as the same person, even when their similarity is low. This would join head turns. The risk is a scene cut in an edited video putting a different person in the same spot. Test it on a multi-person edited video before adopting it.
