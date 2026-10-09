@@ -1,0 +1,27 @@
+appId: com.snapsort.desktop
+productName: snapsort
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+mac:
+  category: public.app-category.photography
+  target:
+    - target: default
+      arch:
+        - arm64
+        - x64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+win:
+  signAndEditExecutable: false
+  target:
+    - target: dir
+      arch:
+        - x64
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false

@@ -1,0 +1,22 @@
+{
+  "name": "snapsort-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.20.0",
+  "scripts": {
+    "dev": "pnpm --filter @snapsort/desktop dev",
+    "build": "pnpm -r build",
+    "package": "pnpm --filter @snapsort/desktop package",
+    "package:dir": "pnpm --filter @snapsort/desktop package:dir",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fixture": "pnpm --filter @snapsort/mock fixture"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
