@@ -1,13 +1,21 @@
-"""Grouping tests. Synthetic unit vectors go straight into a temp database, so no model runs."""
+"""Grouping tests. Synthetic unit vectors go straight into a temp database, so no model runs.
+Real-face checks run only when SNAPSORT_FACE_TEST_DIR or SNAPSORT_LFW_DIR is set, because the
+repo commits no binary fixtures."""
+import json
+import os
+import sqlite3
 import time
 import tracemalloc
+from collections import Counter
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 import snapsort.group as group
 from snapsort.group import CENTROIDS, GroupSummary, run_grouping
-from snapsort.ingest import connect
+from snapsort.ingest import connect, run_ingest
+from snapsort.modules.faces import Faces
 
 
 @pytest.fixture
@@ -212,3 +220,107 @@ def test_failure_rolls_back_every_write(db, data_dir, rng, monkeypatch):
     with pytest.raises(RuntimeError, match="boom"):
         run_grouping(data_dir)
     assert db.execute("SELECT (SELECT count(*) FROM persons), (SELECT count(*) FROM person_faces)").fetchone() == (0, 0)
+
+
+FACE_DIR = os.environ.get("SNAPSORT_FACE_TEST_DIR")
+LFW_DIR = os.environ.get("SNAPSORT_LFW_DIR")
+
+
+def labeled(data_dir):
+    """(media path, bbox, person id) of every grouped face."""
+    with sqlite3.connect(data_dir / "snapsort.db") as conn:
+        return conn.execute(
+            "SELECT m.path, r.bbox, pf.person_id FROM person_faces pf JOIN results r ON r.id = pf.result_id "
+            "JOIN frames f ON f.id = r.frame_id JOIN media m ON m.id = f.media_id").fetchall()
+
+
+@pytest.mark.skipif(not FACE_DIR, reason="set SNAPSORT_FACE_TEST_DIR to voogle's labeled folder ('for testing - normalized')")
+def test_labeled_photos_never_mix_people(data_dir):
+    # At the 0.55 cut-off one Andrea photo splits off (0.546 to her other photos), so 4 persons, not 3.
+    # See "Notes from the real-face run" in docs/plans/2026-10-09-faces-grouping.md.
+    assert run_ingest([Path(FACE_DIR)], [Faces()], data_dir)
+    assert run_grouping(data_dir) == GroupSummary(faces=23, new_persons=4, joined=0)
+    folder = {}  # folder name -> {photo -> persons in it}
+    for path, _, pid in labeled(data_dir):
+        folder.setdefault(Path(path).parent.name, {}).setdefault(path, set()).add(pid)
+    andrea, [dj], [kathryn] = ({p for s in folder[n].values() for p in s} for n in ("Andrea", "DJ", "kathryn"))
+    assert len(andrea) == 2 and len(andrea | {dj, kathryn}) == 4
+    assert list(folder["KathrynAndDJ"].values()) == [{kathryn, dj}] * 4
+
+
+def rebuild_centroids(conn, person_id, new):
+    """The design's step 5, kept as the reference for deviation 4. It rebuilds from every face of
+    the person, one unit mean per media file, and ignores `new`."""
+    by_media = {}
+    for media_id, blob in conn.execute(
+            "SELECT f.media_id, r.vector FROM person_faces pf JOIN results r ON r.id = pf.result_id "
+            "JOIN frames f ON f.id = r.frame_id WHERE pf.person_id = ?", (person_id,)):
+        by_media.setdefault(media_id, []).append(np.frombuffer(blob, "<f4"))
+    X = group._unit(np.stack([np.mean(v, 0) for v in by_media.values()]))
+    group._save_centroids(conn, person_id, X, np.ones(len(X)))
+
+
+def lfw_scores(data_dir):
+    """(pair precision, mixed groups, main-group share of people with >= 10 photos), scored on the
+    face whose box holds each photo's center. That is the face LFW labels."""
+    center = {}  # photo -> (distance to the center, person)
+    for path, bbox, pid in labeled(data_dir):
+        x, y, w, h = json.loads(bbox)
+        d = (x + w / 2 - 0.5) ** 2 + (y + h / 2 - 0.5) ** 2
+        if x <= 0.5 <= x + w and y <= 0.5 <= y + h and d < center.get(path, (2, None))[0]:
+            center[path] = (d, pid)
+    true = [Path(p).parent.name for p in center]
+    found = [pid for _, pid in center.values()]
+
+    def pairs(n):
+        return n * (n - 1) / 2
+
+    precision = sum(map(pairs, Counter(zip(found, true)).values())) / sum(map(pairs, Counter(found).values()))
+    per_person, per_group = {}, {}
+    for t, f in zip(true, found):
+        per_person.setdefault(t, Counter())[f] += 1
+        per_group.setdefault(f, Counter())[t] += 1
+    mixed = sum(1 for c in per_group.values() if len(c) > 1 and sorted(c.values())[-2] >= 2)
+    share = float(np.mean([max(c.values()) / c.total() for c in per_person.values() if c.total() >= 10]))
+    return precision, mixed, share
+
+
+@pytest.mark.skipif(not LFW_DIR, reason="set SNAPSORT_LFW_DIR to a folder with lfw/ (about 7 min)")
+def test_lfw_deviation_4_vs_full_rebuild(data_dir, monkeypatch):
+    """All 13,233 LFW photos are ingested once, then grouped by each centroid refresh:
+    - in two passes (every other photo, then the rest), so the second pass joins through stored centroids
+    - again after a full re-ingest, where every face is deleted and comes back with the same vector
+    The module's faces measured equal scores, except after the re-ingest (share 95.34% vs 94.18% for the rebuild)."""
+    files = sorted((Path(LFW_DIR) / "lfw").glob("*/*.jpg"))
+    assert run_ingest(files, [Faces()], data_dir)
+    later = {str(f.resolve()) for f in files[1::2]}
+    scores = {}
+    for name, refresh in (("rebuild", rebuild_centroids), ("deviation 4", group._refresh_centroids)):
+        monkeypatch.setattr(group, "_refresh_centroids", refresh)
+        conn = connect(data_dir / "snapsort.db")
+        conn.executescript(group.SCHEMA)
+        with conn:  # start clean and hide the second half
+            conn.execute("DELETE FROM persons")  # cascades to person_faces and person_centroids
+            conn.executemany(
+                "UPDATE results SET module = 'faces_later' WHERE frame_id IN (SELECT id FROM frames WHERE media_id = ?)",
+                [(m,) for m, p in conn.execute("SELECT id, path FROM media") if p in later])
+        run_grouping(data_dir)  # pass 1: every other photo
+        with conn:
+            conn.execute("UPDATE results SET module = 'faces' WHERE module = 'faces_later'")
+        run_grouping(data_dir)  # pass 2: the rest
+        scores[name, "2 passes"] = lfw_scores(data_dir)
+        with conn:  # a full re-ingest: every face deleted, then stored again with the same vector
+            last = conn.execute("SELECT max(id) FROM results").fetchone()[0]
+            conn.execute("INSERT INTO results (frame_id, module, label, score, bbox, vector, data) "
+                         "SELECT frame_id, module, label, score, bbox, vector, data FROM results WHERE module = 'faces'")
+            conn.execute("DELETE FROM results WHERE module = 'faces' AND id <= ?", (last,))
+        run_grouping(data_dir)
+        scores[name, "re-ingest"] = lfw_scores(data_dir)
+        conn.close()
+    for (name, case), (p, m, s) in scores.items():
+        print(f"{name:12s} {case:10s} precision {p:.4f}  mixed groups {m}  share {s:.4f}")
+    p, m, s = scores["deviation 4", "2 passes"]
+    assert p >= 0.995 and m <= 1 and s >= 0.95  # the design's check; share floor as measured on the module (0.954)
+    for case in ("2 passes", "re-ingest"):  # the user's rule for deviation 4: within 5% of the rebuild
+        (p4, _, s4), (pr, _, sr) = scores["deviation 4", case], scores["rebuild", case]
+        assert p4 >= 0.95 * pr and s4 >= 0.95 * sr, case
