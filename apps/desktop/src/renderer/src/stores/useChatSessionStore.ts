@@ -32,46 +32,19 @@ export interface ChatSession {
 const STORAGE_KEY = 'snapsort-chat-sessions';
 const ACTIVE_SESSION_KEY = 'snapsort-active-chat-id';
 
-export const INITIAL_DEMO_SESSION: ChatSession = {
-  id: 'session-demo-wedding',
-  title: 'Groom and Bride Search',
-  createdAt: Date.now() - 1000 * 60 * 30, // 30 mins ago
-  updatedAt: Date.now() - 1000 * 60 * 30,
-  lastFilters: [{ kind: 'person', ids: [1, 2], match: 'all', source: 'ai' }],
-  lastScope: 'all',
-  messages: [
-    {
-      id: 'msg-demo-1',
-      role: 'user',
-      content: 'Group all images where the groom and bride are visible, no other audience',
-      createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    },
-    {
-      id: 'msg-demo-2',
-      role: 'assistant',
-      content: 'Done. I found 36 matches and applied these filters:',
-      steps: [
-        { action: 'detect', description: 'faces: [groom, bride], maxFaces: 2' },
-        { action: 'filter', description: 'person: [1, 2], match: all' },
-      ],
-      filters: [{ kind: 'person', ids: [1, 2], match: 'all', source: 'ai' }],
-      previousFilters: [],
-      scope: 'all',
-      summaryDescriptions: ['Includes: groom, bride', 'Max people: 2'],
-      suggestedTitle: 'Groom + Bride',
-      quickActionTitle: 'Groom + Bride',
-      isSaved: true,
-      quickActionId: 'qa-default-1',
-      matchedCount: 36,
-      suggestions: ['Only video', 'Add cake cutting'],
-      createdAt: new Date(Date.now() - 1000 * 60 * 30 + 1000).toISOString(),
-    },
-  ],
+const WELCOME = 'What would you like to find? Describe people, objects, places, dates or what is in the shot.';
+
+export const INITIAL_SESSION: ChatSession = {
+  id: 'session-initial',
+  title: 'New Chat',
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+  messages: [{ id: 'welcome-initial', role: 'assistant', content: WELCOME, createdAt: new Date().toISOString() }],
 };
 
 function loadStoredSessions(): { sessions: ChatSession[]; activeId: string } {
   if (typeof window === 'undefined' || !window.localStorage) {
-    return { sessions: [INITIAL_DEMO_SESSION], activeId: INITIAL_DEMO_SESSION.id };
+    return { sessions: [INITIAL_SESSION], activeId: INITIAL_SESSION.id };
   }
 
   try {
@@ -79,12 +52,15 @@ function loadStoredSessions(): { sessions: ChatSession[]; activeId: string } {
     const storedActiveId = window.localStorage.getItem(ACTIVE_SESSION_KEY);
 
     if (!rawSessions) {
-      return { sessions: [INITIAL_DEMO_SESSION], activeId: INITIAL_DEMO_SESSION.id };
+      return { sessions: [INITIAL_SESSION], activeId: INITIAL_SESSION.id };
     }
 
-    const parsed: ChatSession[] = JSON.parse(rawSessions);
+    // The old mock wedding chat may still be stored from earlier builds
+    const parsed: ChatSession[] = JSON.parse(rawSessions).filter?.(
+      (s: ChatSession) => s.id !== 'session-demo-wedding'
+    );
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      return { sessions: [INITIAL_DEMO_SESSION], activeId: INITIAL_DEMO_SESSION.id };
+      return { sessions: [INITIAL_SESSION], activeId: INITIAL_SESSION.id };
     }
 
     const validActiveId = parsed.some((s) => s.id === storedActiveId)
@@ -93,7 +69,7 @@ function loadStoredSessions(): { sessions: ChatSession[]; activeId: string } {
 
     return { sessions: parsed, activeId: validActiveId };
   } catch {
-    return { sessions: [INITIAL_DEMO_SESSION], activeId: INITIAL_DEMO_SESSION.id };
+    return { sessions: [INITIAL_SESSION], activeId: INITIAL_SESSION.id };
   }
 }
 
@@ -148,7 +124,7 @@ export const useChatSessionStore = create<ChatSessionState>((set, get) => ({
   getActiveSession: () => {
     const { sessions, activeSessionId } = get();
     const found = sessions.find((s) => s.id === activeSessionId);
-    return found || sessions[0] || INITIAL_DEMO_SESSION;
+    return found || sessions[0] || INITIAL_SESSION;
   },
 
   createSession: (initialPrompt?: string) => {
@@ -159,8 +135,7 @@ export const useChatSessionStore = create<ChatSessionState>((set, get) => ({
     const welcomeMsg: ChatMessage = {
       id: `welcome-${now}`,
       role: 'assistant',
-      content: 'What would you like to find? Describe visual details, objects, people, or places.',
-      suggestions: ['Groom with wedding cake', 'Photos in Tokyo', 'Solo portraits with flowers'],
+      content: WELCOME,
       createdAt: new Date(now).toISOString(),
     };
 
@@ -206,8 +181,7 @@ export const useChatSessionStore = create<ChatSessionState>((set, get) => ({
             {
               id: `welcome-${Date.now()}`,
               role: 'assistant',
-              content: 'What would you like to find? Describe visual details, objects, people, or places.',
-              suggestions: ['Groom with wedding cake', 'Photos in Tokyo', 'Solo portraits with flowers'],
+              content: WELCOME,
               createdAt: new Date().toISOString(),
             },
           ],
@@ -310,7 +284,7 @@ export const useChatSessionStore = create<ChatSessionState>((set, get) => ({
   },
 
   resetAllSessions: () => {
-    const demo = { ...INITIAL_DEMO_SESSION, id: `session-${Date.now()}` };
+    const demo = { ...INITIAL_SESSION, id: `session-${Date.now()}` };
     persistSessions([demo], demo.id);
     set({
       sessions: [demo],

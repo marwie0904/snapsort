@@ -120,5 +120,6 @@ export const QueryPatchSchema = z.object({
       clear: z.boolean().optional(),
     })
     .optional(),
+  sort: z.enum(['relevance', 'similarity', 'name', 'newest', 'oldest']).nullable().optional(),
 });
 export type QueryPatch = z.infer<typeof QueryPatchSchema>;

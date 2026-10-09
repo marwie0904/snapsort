@@ -6,6 +6,7 @@ library key * 2**32 + local id, where the key comes from the library's uuid. Tha
 numeric ids and still routes every id back to its library."""
 import json
 import os
+import signal
 import sqlite3
 import sys
 import threading
@@ -18,6 +19,7 @@ from pathlib import Path, PurePosixPath
 import numpy as np
 
 import snapsort.search as search_mod
+from snapsort import chat as chat_mod
 from snapsort.group import PICK_FACE, _save_centroids
 from snapsort.ingest import frame_file, load_image
 from snapsort.library import INTERNAL_DATA, disk_usage, library_for, mounted, read_id, root_for
@@ -545,6 +547,18 @@ def counts(params=None) -> dict:
     return c
 
 
+def chat(params) -> dict:
+    """One chat message -> one search, see snapsort/chat.py. `current.media`/`current.t`: the file open in the viewer."""
+    people: dict[str, int] = {}
+    for p in list_people():
+        if p["name"]:
+            people.setdefault(p["name"], p["id"])  # most files first: a name on two drives goes to the bigger one
+    labels = [k for k, _ in sorted(_labels().items(), key=lambda kv: -kv[1])]
+    cur = params.get("current") or {}
+    return chat_mod.ask(str(params.get("text") or ""), people, [p["name"] for p in list_places()], labels,
+                        cur.get("media"), cur.get("t"))
+
+
 # ---- files for the media protocol
 
 def resolve_media(params) -> str:
@@ -593,7 +607,7 @@ METHODS = {
     "getDetections": get_detections, "listPeople": list_people, "suggestMerges": suggest_merges,
     "renamePerson": rename_person,
     "mergePeople": merge_people, "listPlaces": list_places, "getLabelManifest": label_manifest, "getCounts": counts,
-    "resolveMedia": resolve_media,
+    "resolveMedia": resolve_media, "chat": chat,
 }
 
 
@@ -618,6 +632,7 @@ def handle(req: dict) -> dict:
 def serve() -> int:
     """Read requests until stdin closes. Stray prints from libraries go to stderr, not the protocol."""
     search_mod.CACHE_MODELS = True
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # exit normally, so atexit stops the chat model
     sys.stdout.flush()
     proto = os.fdopen(os.dup(1), "w", buffering=1)
     os.dup2(2, 1)

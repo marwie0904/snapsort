@@ -15,7 +15,6 @@ import {
 import { useUiStore } from '../stores/useUiStore';
 import { useChatSessionStore, ChatMessage } from '../stores/useChatSessionStore';
 import { ChatSessionHistoryDrawer } from './ChatSessionHistoryDrawer';
-import { parsePromptToFilters, ParsedAiFilterResult } from '../utils/aiFilterEngine';
 import type { Filter } from '@snapsort/contract';
 
 const DEFAULT_PANEL_WIDTH = 380;
@@ -39,6 +38,18 @@ function getStoredWidth(): number {
   return DEFAULT_PANEL_WIDTH;
 }
 
+const NAME_MAX = 12;
+const FILTER_ARGS = ['people', 'objects', 'place', 'kind', 'date_from', 'date_to'];
+
+/** Quick action name: the filter values the model chose, e.g. "Mar Wie+Alex", at most NAME_MAX characters. */
+function quickActionName(steps: Array<{ action: string; description: string }>): string {
+  const name = steps
+    .filter((st) => FILTER_ARGS.includes(st.action))
+    .map((st) => (st.action === 'place' ? st.description.split(',')[0] : st.description.split(', ').join('+')))
+    .join('+');
+  return name.length > NAME_MAX ? `${name.slice(0, NAME_MAX - 1).trimEnd()}…` : name || 'AI filter';
+}
+
 interface AskAiPanelProps {
   currentMatchedCount?: number;
 }
@@ -57,8 +68,14 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
     setFilters,
     addQuickAction,
     setScope,
+    setQ,
+    setSimilarTo,
+    setSort,
+    getSearchQuery,
+    currentView,
+    selectedMediaId,
+    currentMediaTimestamp,
     toggleAiPanel,
-    customPeopleNames,
   } = useUiStore();
 
   const {
@@ -165,65 +182,51 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
       textareaRef.current.style.height = '36px';
     }
 
-    const userMsgId = `user-${Date.now()}`;
-    const newMsg: ChatMessage = {
-      id: userMsgId,
+    addMessageToActiveSession({
+      id: `user-${Date.now()}`,
       role: 'user',
       content: userText,
       createdAt: new Date().toISOString(),
-    };
-
-    const prevFiltersSnapshot = [...filters];
-    addMessageToActiveSession(newMsg);
+    });
     setIsThinking(true);
 
-    // Parse prompt with client-side NLP
-    const parsed: ParsedAiFilterResult = parsePromptToFilters(userText, customPeopleNames);
-
-    // Auto-apply filters immediately
-    if (parsed.filters.length > 0) {
-      setFilters(parsed.filters);
-      if (parsed.scope && parsed.scope !== 'all') {
-        setScope(parsed.scope);
+    // The local model turns the message into one full search (snapsort/chat.py) that replaces the current one.
+    const prevFiltersSnapshot = [...filters];
+    const steps: Array<{ action: string; description: string }> = [];
+    let reply = '';
+    let applied: Filter[] | undefined;
+    const open =
+      currentView === 'media-detail' && selectedMediaId !== null
+        ? { media: selectedMediaId, t: currentMediaTimestamp }
+        : {};
+    window.snapsort!.chat({ threadId: 0, text: userText, current: { ...getSearchQuery(), ...open } }, (e) => {
+      if (e.type === 'step' && e.step) steps.push(e.step);
+      else if (e.type === 'token' && e.token) reply += e.token;
+      else if (e.type === 'patch' && e.patch) {
+        applied = e.patch.filters?.add ?? [];
+        setScope('all');
+        setFilters(applied);
+        setQ(e.patch.q ?? '');
+        setSimilarTo(e.patch.similarTo ?? null);
+        if (e.patch.sort) setSort(e.patch.sort);
+        setSessionFilters(activeSession.id, applied, 'all');
+      } else if (e.type === 'done' || e.type === 'error') {
+        setIsThinking(false);
+        addMessageToActiveSession({
+          id: `asst-${Date.now()}`,
+          role: 'assistant',
+          content: e.type === 'error' ? `Error: ${e.error}` : reply || 'Applied:',
+          steps,
+          filters: applied,
+          previousFilters: applied ? prevFiltersSnapshot : undefined,
+          scope: 'all',
+          suggestedTitle: quickActionName(steps),
+          quickActionTitle: quickActionName(steps),
+          isSaved: false,
+          createdAt: new Date().toISOString(),
+        });
       }
-      setSessionFilters(activeSession.id, parsed.filters, parsed.scope);
-    }
-
-    setTimeout(() => {
-      let matches = currentMatchedCount;
-      if (parsed.filters.length > 1) {
-        matches = Math.max(8, Math.floor(currentMatchedCount * 0.45));
-      } else if (parsed.filters.length === 1) {
-        matches = Math.max(14, Math.floor(currentMatchedCount * 0.7));
-      }
-
-      const steps: Array<{ action: string; description: string }> = [
-        { action: 'detect', description: 'Intent parsed' },
-        ...(parsed.filters.length > 0
-          ? [{ action: 'filter', description: parsed.summaryDescriptions.join(' • ') || 'applied filters' }]
-          : []),
-      ];
-
-      const assistantMsg: ChatMessage = {
-        id: `asst-${Date.now()}`,
-        role: 'assistant',
-        content: `Done. I found ${matches} matches and applied these filters:`,
-        steps,
-        filters: parsed.filters,
-        previousFilters: prevFiltersSnapshot,
-        scope: parsed.scope,
-        summaryDescriptions: parsed.summaryDescriptions,
-        suggestedTitle: parsed.suggestedTitle,
-        quickActionTitle: parsed.suggestedTitle,
-        isSaved: false,
-        matchedCount: matches,
-        suggestions: parsed.suggestions,
-        createdAt: new Date().toISOString(),
-      };
-
-      setIsThinking(false);
-      addMessageToActiveSession(assistantMsg);
-    }, 250);
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -453,6 +456,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
                         value={msg.quickActionTitle ?? msg.suggestedTitle ?? ''}
                         onChange={(e) => handleTitleChange(msg.id, e.target.value)}
                         placeholder="Action name..."
+                        maxLength={NAME_MAX}
                         className="bg-transparent border-none outline-none w-full text-xs text-[var(--text)] font-medium"
                       />
                       <Edit2 size={12} className="text-[var(--text-muted)] shrink-0 ml-1.5" />
@@ -529,7 +533,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
           {isThinking && (
             <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-3.5 flex items-center gap-2 text-xs text-[var(--text-muted)] animate-pulse">
               <Sparkles size={14} className="text-[var(--accent)]" />
-              <span>Analyzing intent & finding matches...</span>
+              <span>Choosing filters…</span>
             </div>
           )}
         </div>
@@ -544,7 +548,7 @@ export const AskAiPanel: React.FC<AskAiPanelProps> = ({ currentMatchedCount = 36
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask for a filter, e.g. bride with flowers... (Enter to send)"
+            placeholder="e.g. videos with a car, oldest first (Enter to send)"
             className="bg-transparent border-none outline-none w-full text-xs text-[var(--text)] placeholder-[var(--text-dim)] py-1 resize-none leading-relaxed"
           />
 

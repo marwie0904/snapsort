@@ -3,7 +3,7 @@ import { execFile } from 'child_process';
 import { readdirSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { MockSnapsortApi } from '@snapsort/mock';
-import type { BackendEvent, FolderNode, Library } from '@snapsort/contract';
+import type { BackendEvent, ChatStreamCallback, FolderNode, Library, LibrarySearch, QueryPatch } from '@snapsort/contract';
 import { BackendError, Sidecar } from './sidecar';
 import { IngestQueue } from './ingest';
 import type { MediaResolver } from './mediaProtocol';
@@ -141,9 +141,22 @@ export function registerBackend(getWindow: () => BrowserWindow | null): MediaRes
     writeFileSync(path, Buffer.from(input.bytes));
     return { imageRef: path };
   });
-  ipcMain.handle('api:chat:start', (event) => {
+  // One message -> one search by the local model (snapsort/chat.py). Not streamed: it answers in well under a second.
+  ipcMain.handle('api:chat:start', (event, req: { text: string; current: LibrarySearch }) => {
     const channel = `chat-stream-${Date.now()}`;
-    setTimeout(() => event.sender.send(channel, { type: 'error', error: 'The AI assistant is not available yet.' }), 0);
+    const send: ChatStreamCallback = (e) => {
+      if (!event.sender.isDestroyed()) event.sender.send(channel, e);
+    };
+    call<{ reply: string | null; call: Record<string, unknown> | null; patch: QueryPatch | null }>('chat', req)
+      .then((r) => {
+        for (const [k, v] of Object.entries(r.call ?? {})) {
+          send({ type: 'step', step: { action: k, description: Array.isArray(v) ? v.join(', ') : String(v) } });
+        }
+        if (r.patch) send({ type: 'patch', patch: r.patch });
+        if (r.reply) send({ type: 'token', token: r.reply });
+        send({ type: 'done' });
+      })
+      .catch((err: Error) => send({ type: 'error', error: err.message }));
     return { streamChannel: channel };
   });
 

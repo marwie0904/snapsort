@@ -2,25 +2,25 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   useChatSessionStore,
   generateSessionTitle,
-  INITIAL_DEMO_SESSION,
+  INITIAL_SESSION,
 } from '../stores/useChatSessionStore';
 
 describe('useChatSessionStore', () => {
   beforeEach(() => {
     // Reset store before each test
     useChatSessionStore.setState({
-      sessions: [INITIAL_DEMO_SESSION],
-      activeSessionId: INITIAL_DEMO_SESSION.id,
+      sessions: [INITIAL_SESSION],
+      activeSessionId: INITIAL_SESSION.id,
       isHistoryOpen: false,
     });
     vi.restoreAllMocks();
   });
 
-  it('initializes with default demo session', () => {
+  it('initializes with a blank session', () => {
     const store = useChatSessionStore.getState();
     expect(store.sessions.length).toBeGreaterThanOrEqual(1);
-    expect(store.activeSessionId).toBe(INITIAL_DEMO_SESSION.id);
-    expect(store.getActiveSession().title).toBe('Groom and Bride Search');
+    expect(store.activeSessionId).toBe(INITIAL_SESSION.id);
+    expect(store.getActiveSession().title).toBe('New Chat');
   });
 
   it('correctly generates concise session titles', () => {
@@ -52,12 +52,12 @@ describe('useChatSessionStore', () => {
     useChatSessionStore.getState().setIsHistoryOpen(true);
     expect(useChatSessionStore.getState().isHistoryOpen).toBe(true);
 
-    // Switch back to initial demo session
-    useChatSessionStore.getState().switchSession(INITIAL_DEMO_SESSION.id);
+    // Switch back to the initial session
+    useChatSessionStore.getState().switchSession(INITIAL_SESSION.id);
 
     const state = useChatSessionStore.getState();
-    expect(state.activeSessionId).toBe(INITIAL_DEMO_SESSION.id);
-    expect(state.getActiveSession().id).toBe(INITIAL_DEMO_SESSION.id);
+    expect(state.activeSessionId).toBe(INITIAL_SESSION.id);
+    expect(state.getActiveSession().id).toBe(INITIAL_SESSION.id);
     expect(state.isHistoryOpen).toBe(false);
   });
 
@@ -80,7 +80,7 @@ describe('useChatSessionStore', () => {
 
   it('renames an existing session', () => {
     const store = useChatSessionStore.getState();
-    store.renameSession(INITIAL_DEMO_SESSION.id, 'Wedding Highlights 2026');
+    store.renameSession(INITIAL_SESSION.id, 'Wedding Highlights 2026');
 
     const active = store.getActiveSession();
     expect(active.title).toBe('Wedding Highlights 2026');
@@ -97,12 +97,12 @@ describe('useChatSessionStore', () => {
 
     const state = useChatSessionStore.getState();
     expect(state.sessions.length).toBe(1);
-    expect(state.activeSessionId).toBe(INITIAL_DEMO_SESSION.id);
+    expect(state.activeSessionId).toBe(INITIAL_SESSION.id);
   });
 
   it('creates fallback session when all sessions are deleted', () => {
     const store = useChatSessionStore.getState();
-    store.deleteSession(INITIAL_DEMO_SESSION.id);
+    store.deleteSession(INITIAL_SESSION.id);
 
     const state = useChatSessionStore.getState();
     expect(state.sessions.length).toBe(1);
@@ -112,13 +112,13 @@ describe('useChatSessionStore', () => {
 
   it('updates messages in active session', () => {
     const store = useChatSessionStore.getState();
-    store.updateMessageInActiveSession('msg-demo-2', {
+    store.updateMessageInActiveSession('welcome-initial', {
       quickActionTitle: 'Bride Only Action',
       isSaved: true,
     });
 
     const active = store.getActiveSession();
-    const msg = active.messages.find((m) => m.id === 'msg-demo-2');
+    const msg = active.messages.find((m) => m.id === 'welcome-initial');
     expect(msg?.quickActionTitle).toBe('Bride Only Action');
     expect(msg?.isSaved).toBe(true);
   });
