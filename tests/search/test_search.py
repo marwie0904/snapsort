@@ -73,6 +73,14 @@ def test_missing_database_is_an_error_and_not_created(tmp_path, sample_image):
     assert not (data_dir / "snapsort.db").exists()
 
 
+def test_missing_database_message_shows_absolute_data_dir(tmp_path, sample_image, monkeypatch):
+    # The data dir is relative to the working directory, so a wrong cwd is the likely cause.
+    monkeypatch.chdir(sample_image.parent)
+    with pytest.raises(SearchError) as e:
+        search(sample_image, Path(".snapsort"))
+    assert str(sample_image.parent.resolve() / ".snapsort") in str(e.value)
+
+
 def test_library_without_image_embed_vectors_is_an_error(tmp_path, sample_image):
     data_dir = tmp_path / ".snapsort"
     assert run_ingest([sample_image], [Example()], data_dir)

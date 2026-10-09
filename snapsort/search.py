@@ -54,9 +54,10 @@ def search(query: Path, data_dir: Path, limit: int = 20, min_score: float = 0.5)
         image = load_image(query)
     except OSError as e:
         raise SearchError(f"cannot read query {query}: {e}") from e
-    db = data_dir / "snapsort.db"
+    # Absolute in messages: the data dir is relative to the cwd, so a wrong cwd is the likely cause.
+    db = data_dir.resolve() / "snapsort.db"
     if not db.exists():
-        raise SearchError(f"nothing ingested in {data_dir}; {HINT}")
+        raise SearchError(f"nothing ingested in {db.parent}; {HINT}")
     with closing(sqlite3.connect(db)) as conn:
         rows = conn.execute(VECTORS, (ImageEmbed.name, ImageEmbed.version)).fetchall()
     if not rows:
