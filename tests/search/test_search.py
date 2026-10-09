@@ -122,6 +122,28 @@ def test_or_matches_any_filter(db):
     assert hits == {tokyo: [0.0, 1.0, 2.0], with_anna: [2.0], both: [1.0]}
 
 
+def test_same_frame_with_whole_file_filters(db):
+    mid, f = media(db, "video", frames=3)
+    place(db, f[0], "tokyo, japan")
+    anna = person(db, [f[2]])
+    tokyo = {"kind": "place", "name": "tokyo, japan"}
+    [hit] = search(db, [tokyo, {"kind": "person", "ids": [anna], "match": "all"}], scope="frame")
+    assert ts_of(hit) == [2.0]  # a whole-file filter doesn't narrow the frames
+    [hit] = search(db, [tokyo, {"kind": "mediaKind", "value": "video"}], scope="frame")
+    assert hit.media_id == mid and ts_of(hit) == [0.0, 1.0, 2.0]  # only whole-file filters: every frame
+
+
+def test_or_with_same_frame(db):
+    _, f = media(db, "video", frames=3)  # anna and ben, never in one frame
+    together, g = media(db, "video", frames=3)
+    image, _ = media(db, "image")
+    anna, ben = person(db, [f[0], g[1]]), person(db, [f[2], g[1]])
+    hits = {h.media_id: ts_of(h) for h in search(
+        db, [{"kind": "person", "ids": [anna, ben], "match": "all"}, {"kind": "mediaKind", "value": "image"}],
+        combine="any", scope="frame")}
+    assert hits == {together: [1.0], image: []}
+
+
 def test_place_covers_every_frame_and_ignores_case(db):
     mid, f = media(db, "video", frames=3)
     media(db, "image")  # no location
@@ -337,6 +359,29 @@ def test_or_with_similar_sorts_unscored_files_last(db, q, rng):
     assert hits[2].score is None
 
 
+def test_or_with_similar_marks_an_unscored_video_whole(db, q, rng):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    vid, f = media(db, "video", frames=3)
+    for fid in f:
+        embed(db, fid, near(q, 0.1, rng))
+    place(db, f[0], "tokyo, japan")
+    hits = search(db, [{"kind": "place", "name": "tokyo, japan"}], {"mediaId": query}, min_score=0.5, combine="any")
+    assert [h.media_id for h in hits] == [query, vid]
+    assert (hits[1].score, ts_of(hits[1]), hits[1].best_ts) == (None, [0.0, 1.0, 2.0], 0.0)
+
+
+def test_similar_reads_candidates_in_chunks(db, q, rng, monkeypatch):
+    monkeypatch.setattr("snapsort.search.CHUNK", 1)
+    ids = []
+    for cos in (1.0, 0.9, 0.8):
+        mid, [fid] = media(db, "image")
+        embed(db, fid, near(q, cos, rng))
+        ids.append(mid)
+    hits = search(db, [{"kind": "mediaKind", "value": "image"}], {"mediaId": ids[0]}, min_score=0.5)
+    assert [h.media_id for h in hits] == ids
+
+
 def test_similar_errors(db, tmp_path):
     no_vector, _ = media(db, "image")
     not_image = tmp_path / "notes.txt"
@@ -409,6 +454,16 @@ def test_cli_search_shows_scores_with_similar(db, run, q):
     embed(db, fq, q)
     assert run("search", "--similar-media", f"{query}@0", "--min-score", "0.5") == \
         (0, "/lib/q.jpg  image  1.00\n1 of 1 files\n", "")
+
+
+def test_cli_or_with_similar_prints_unscored_files(db, run, q, rng):
+    query, [fq] = media(db, "image", name="q.jpg")
+    embed(db, fq, q)
+    _, [fa] = media(db, "image", name="anna.jpg")
+    embed(db, fa, near(q, 0.1, rng))
+    anna = person(db, [fa])
+    assert run("search", "--person", str(anna), "--similar-media", str(query), "--min-score", "0.5", "--or") == \
+        (0, "/lib/q.jpg  image  1.00\n/lib/anna.jpg  image  -\n2 of 2 files\n", "")
 
 
 def test_cli_search_json(db, run, q):
