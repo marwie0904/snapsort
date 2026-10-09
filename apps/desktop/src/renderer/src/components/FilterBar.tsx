@@ -126,7 +126,7 @@ export const FilterBar: React.FC = () => {
   return (
     <div
       data-tour="filter-bar"
-      className="flex items-center gap-2 py-3 overflow-x-auto no-scrollbar select-none text-xs"
+      className="flex flex-wrap items-center gap-2 py-3 select-none text-xs"
     >
       {/* 1. Standard Facet Pickers: People, Objects, Places */}
       <FacetPopoverPill

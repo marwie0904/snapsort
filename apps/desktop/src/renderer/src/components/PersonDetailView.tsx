@@ -29,6 +29,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
     customPeopleNames,
     setPersonName,
     setAiPanelOpen,
+    openMediaDetail,
   } = useUiStore();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -214,7 +215,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
             No photos or videos matched for this person yet.
           </div>
         ) : (
-          <MediaGrid items={items} viewMode="highlight" />
+          <MediaGrid items={items} viewMode="highlight" onItemClick={openMediaDetail} />
         )}
       </div>
     </div>

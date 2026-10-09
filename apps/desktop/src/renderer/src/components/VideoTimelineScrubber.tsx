@@ -306,54 +306,54 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
             <div className="w-2.5 h-2.5 bg-[var(--accent)] rounded-full shadow-[0_0_8px_var(--accent)] -mt-0.5" />
             <div className="w-0.5 flex-1 bg-[var(--accent)]" />
           </div>
-
-          {/* Scrubber Hover Tooltip */}
-          {hoveredTs !== null && entitiesAtHoveredTs && (
-            <div
-              style={{
-                left: `${Math.max(60, Math.min(tooltipPos, (trackRef.current?.clientWidth || 300) - 100))}px`,
-              }}
-              className="absolute -top-14 -translate-x-1/2 z-40 px-2.5 py-1.5 rounded-xl bg-[var(--surface-1)]/95 border border-[var(--border)] shadow-2xl backdrop-blur-md pointer-events-none flex flex-col items-center gap-1 min-w-[120px]"
-            >
-              <span className="text-[11px] font-mono text-[var(--text)] font-semibold">
-                {formatTime(hoveredTs)}
-              </span>
-
-              {/* Tag / Person / Object summary in tooltip */}
-              <div className="flex items-center gap-1.5 flex-wrap justify-center text-[9px]">
-                {entitiesAtHoveredTs.people.map((name, i) => (
-                  <span
-                    key={`p-${i}`}
-                    className="text-sky-800 dark:text-[#38BDF8] bg-sky-100 dark:bg-[#0E273C] px-1 py-0.5 rounded border border-sky-300 dark:border-[#38BDF8]/30 font-medium"
-                  >
-                    {name}
-                  </span>
-                ))}
-                {entitiesAtHoveredTs.objects.map((name, i) => (
-                  <span
-                    key={`o-${i}`}
-                    className="text-amber-900 dark:text-[#FFC400] bg-amber-100 dark:bg-[#2E2405] px-1 py-0.5 rounded border border-amber-300 dark:border-[#FFC400]/30 font-medium"
-                  >
-                    {name}
-                  </span>
-                ))}
-                {entitiesAtHoveredTs.tags.map((name, i) => (
-                  <span
-                    key={`t-${i}`}
-                    className="text-emerald-900 dark:text-[#34D399] bg-emerald-100 dark:bg-[#0A261B] px-1 py-0.5 rounded border border-emerald-300 dark:border-[#34D399]/30 font-medium"
-                  >
-                    {name}
-                  </span>
-                ))}
-                {entitiesAtHoveredTs.people.length === 0 &&
-                  entitiesAtHoveredTs.objects.length === 0 &&
-                  entitiesAtHoveredTs.tags.length === 0 && (
-                    <span className="text-[var(--text-muted)]">No tags at frame</span>
-                  )}
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Scrubber Hover Tooltip (outside the track, whose overflow-hidden would clip it) */}
+        {hoveredTs !== null && entitiesAtHoveredTs && (
+          <div
+            style={{
+              left: `${Math.max(60, Math.min(tooltipPos, (trackRef.current?.clientWidth || 300) - 100))}px`,
+            }}
+            className="absolute -top-14 -translate-x-1/2 z-40 px-2.5 py-1.5 rounded-xl bg-[var(--surface-1)]/95 border border-[var(--border)] shadow-2xl backdrop-blur-md pointer-events-none flex flex-col items-center gap-1 min-w-[120px]"
+          >
+            <span className="text-[11px] font-mono text-[var(--text)] font-semibold">
+              {formatTime(hoveredTs)}
+            </span>
+
+            {/* Tag / Person / Object summary in tooltip */}
+            <div className="flex items-center gap-1.5 flex-wrap justify-center text-[9px]">
+              {entitiesAtHoveredTs.people.map((name, i) => (
+                <span
+                  key={`p-${i}`}
+                  className="text-sky-800 dark:text-[#38BDF8] bg-sky-100 dark:bg-[#0E273C] px-1 py-0.5 rounded border border-sky-300 dark:border-[#38BDF8]/30 font-medium"
+                >
+                  {name}
+                </span>
+              ))}
+              {entitiesAtHoveredTs.objects.map((name, i) => (
+                <span
+                  key={`o-${i}`}
+                  className="text-amber-900 dark:text-[#FFC400] bg-amber-100 dark:bg-[#2E2405] px-1 py-0.5 rounded border border-amber-300 dark:border-[#FFC400]/30 font-medium"
+                >
+                  {name}
+                </span>
+              ))}
+              {entitiesAtHoveredTs.tags.map((name, i) => (
+                <span
+                  key={`t-${i}`}
+                  className="text-emerald-900 dark:text-[#34D399] bg-emerald-100 dark:bg-[#0A261B] px-1 py-0.5 rounded border border-emerald-300 dark:border-[#34D399]/30 font-medium"
+                >
+                  {name}
+                </span>
+              ))}
+              {entitiesAtHoveredTs.people.length === 0 &&
+                entitiesAtHoveredTs.objects.length === 0 &&
+                entitiesAtHoveredTs.tags.length === 0 && (
+                  <span className="text-[var(--text-muted)]">No tags at frame</span>
+                )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 3. Color-Coded Legend Footer */}
