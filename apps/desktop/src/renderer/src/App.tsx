@@ -37,9 +37,9 @@ export const App: React.FC = () => {
   });
 
   const items = queryResult?.items || [];
-  const total = queryResult?.total || counts?.all || 248;
-  const clipsCount = queryResult?.facets?.videos || counts?.videos || 66;
-  const photosCount = queryResult?.facets?.images || counts?.images || 182;
+  const total = queryResult?.total ?? (counts?.all ?? 248);
+  const clipsCount = queryResult?.facets?.videos ?? (counts?.videos ?? 66);
+  const photosCount = queryResult?.facets?.images ?? (counts?.images ?? 182);
 
   const handleAddFolder = async () => {
     await api.pickAndAddFolder();

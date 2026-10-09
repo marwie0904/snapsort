@@ -24,10 +24,30 @@ export const mockPlaces: PlaceSummary[] = [
   { name: 'Vineyard Hill', lat: 40.812345, lon: -73.94567, count: 11 },
 ];
 
+export const mockLocalFolders: Folder[] = [
+  { id: 1, name: 'Ceremony', path: '/Users/mac/Media/Wedding/Ceremony', isExternal: false },
+  { id: 2, name: 'Reception', path: '/Users/mac/Media/Wedding/Reception', isExternal: false },
+  { id: 3, name: 'Drone', path: '/Users/mac/Media/Wedding/Drone', isExternal: false },
+];
+
+export const mockExternalDrive = {
+  id: 'sandisk-1tb',
+  name: 'SanDisk Extreme SSD',
+  type: 'USB 3.2 External',
+  capacity: '1 TB',
+  used: '482 GB',
+  free: '518 GB',
+  usedPercent: 48,
+  folders: [
+    { id: 4, name: 'DCIM/100CANON', path: '/Volumes/SanDisk_1TB/DCIM/100CANON', isExternal: true, driveName: 'SanDisk Extreme SSD' },
+    { id: 5, name: 'Wedding_Raw', path: '/Volumes/SanDisk_1TB/Wedding_Raw', isExternal: true, driveName: 'SanDisk Extreme SSD' },
+    { id: 6, name: 'Drone_4K', path: '/Volumes/SanDisk_1TB/Drone_4K', isExternal: true, driveName: 'SanDisk Extreme SSD' },
+  ],
+};
+
 export const mockFolders: Folder[] = [
-  { id: 1, name: 'Ceremony', path: '/Users/mac/Media/Wedding/Ceremony' },
-  { id: 2, name: 'Reception', path: '/Users/mac/Media/Wedding/Reception' },
-  { id: 3, name: 'Drone', path: '/Users/mac/Media/Wedding/Drone' },
+  ...mockLocalFolders,
+  ...mockExternalDrive.folders,
 ];
 
 export const mockLabelManifest: LabelManifest = {
@@ -218,7 +238,7 @@ export function generateMockMediaItems(): MediaDetail[] {
   for (let i = 9; i <= 248; i++) {
     const isVideo = i <= 71; // 3 + 63 = 66 videos total
     const kind = isVideo ? 'video' : 'image';
-    const folderId = (i % 3) + 1;
+    const folderId = (i % mockFolders.length) + 1;
     const folder = mockFolders[folderId - 1];
     const place = mockPlaces[i % mockPlaces.length];
 

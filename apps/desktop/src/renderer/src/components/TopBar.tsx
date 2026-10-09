@@ -1,12 +1,26 @@
 import React from 'react';
-import { Search, Image, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Search, Image, SlidersHorizontal, Sparkles, PanelLeft } from 'lucide-react';
 import { useUiStore } from '../stores/useUiStore';
 
 export const TopBar: React.FC = () => {
-  const { q, setQ, aiPanelOpen, toggleAiPanel } = useUiStore();
+  const { q, setQ, aiPanelOpen, toggleAiPanel, sidebarOpen, toggleSidebar } = useUiStore();
 
   return (
     <div className="flex items-center gap-3 w-full">
+      {/* Sidebar Toggle Button */}
+      <button
+        type="button"
+        onClick={toggleSidebar}
+        title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        className={`p-2 rounded-xl border transition-all select-none shrink-0 ${
+          sidebarOpen
+            ? 'bg-[#181818] border-[#282828] text-[#888888] hover:text-[#F5F5F5] hover:border-[#444444]'
+            : 'bg-[#FFC400] border-[#FFC400] text-[#111111] hover:brightness-105 shadow-sm'
+        }`}
+      >
+        <PanelLeft size={16} />
+      </button>
+
       {/* Search Input Container */}
       <div className="flex-1 min-w-0 flex items-center bg-[#181818] border border-[#282828] rounded-full px-4 py-2 text-sm text-[#F5F5F5] focus-within:border-[#444444] transition-all">
         <Search size={16} className="text-[#888888] mr-3 shrink-0" />

@@ -89,8 +89,22 @@ export const FolderSchema = z.object({
   name: z.string(),
   path: z.string(),
   busy: z.boolean().optional(),
+  isExternal: z.boolean().optional(),
+  driveName: z.string().optional(),
 });
 export type Folder = z.infer<typeof FolderSchema>;
+
+export const ExternalDriveSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  capacity: z.string(),
+  used: z.string(),
+  free: z.string(),
+  usedPercent: z.number(),
+  folders: z.array(FolderSchema),
+});
+export type ExternalDrive = z.infer<typeof ExternalDriveSchema>;
 
 export const IngestResultSchema = z.object({
   newFiles: z.number().int(),

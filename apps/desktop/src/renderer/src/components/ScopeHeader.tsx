@@ -13,12 +13,45 @@ export const ScopeHeader: React.FC<ScopeHeaderProps> = ({
   clipsCount = 66,
   photosCount = 182,
 }) => {
-  const { sort, setSort, view, setView } = useUiStore();
+  const {
+    sort,
+    setSort,
+    view,
+    setView,
+    scope,
+    selectedFolderName,
+    selectedFolderDrive,
+    clearSelectedFolder,
+  } = useUiStore();
+
+  const title = selectedFolderName
+    ? selectedFolderName
+    : scope === 'images'
+    ? 'Photos'
+    : scope === 'videos'
+    ? 'Videos'
+    : 'All footage';
 
   return (
     <div className="flex flex-wrap items-end justify-between gap-3 pt-4 pb-2">
       <div className="min-w-40">
-        <h1 className="text-2xl font-bold tracking-tight text-[#F5F5F5]">All footage</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-[#F5F5F5]">{title}</h1>
+          {selectedFolderDrive && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-[#222222] text-[#FFC400] border border-[#333333]">
+              {selectedFolderDrive}
+            </span>
+          )}
+          {selectedFolderName && (
+            <button
+              onClick={clearSelectedFolder}
+              className="text-[11px] text-[#888888] hover:text-[#FFC400] transition-colors ml-1"
+              title="Return to library footage"
+            >
+              ✕ Clear
+            </button>
+          )}
+        </div>
         <p className="text-xs text-[#777777] mt-1 tabular-nums">
           {total} items · {clipsCount} clips · {photosCount} photos
         </p>

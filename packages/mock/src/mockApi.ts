@@ -66,6 +66,12 @@ export class MockSnapsortApi implements SnapsortApi {
       list = list.filter((m) => m.kind === 'video');
     }
 
+    // Filter by folder scope
+    const folderFilter = search.f.find((f) => f.kind === 'folder');
+    if (folderFilter && folderFilter.kind === 'folder') {
+      list = list.filter((m) => m.folderId === folderFilter.id);
+    }
+
     // Helper: test if an item matches the active filters
     const matchesFilters = (m: MediaDetail): boolean => {
       // Semantic text search (simulated)
