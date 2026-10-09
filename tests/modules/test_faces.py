@@ -129,6 +129,12 @@ def test_large_frame_in_worker_thread(faces):
         assert pool.submit(faces.process, frame).result() == []
 
 
+
+@pytest.mark.parametrize("size", [(2, 4000), (4000, 2)])
+def test_thin_frame_is_skipped(faces, size):
+    # Vision fails on near-zero-width images. No face in them can pass the 60 px gate anyway.
+    assert faces.process(image_frame(Image.new("RGB", size, (90, 120, 150)))) == []
+
 @needs_faces
 def test_labeled_photos(faces):
     photos = sorted(p for p in Path(FACE_DIR).glob("*/*") if p.suffix.lower() in IMAGE_EXTS)

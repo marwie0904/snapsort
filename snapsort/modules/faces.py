@@ -180,6 +180,8 @@ class Faces(Module):
         kept, crops = [], []
         for f in frames:
             w, h = f.image.size
+            if min(w, h) < MIN_SIDE:  # no face can pass the gate, and Vision errors on near-zero widths
+                continue
             for face in detect(f.image):
                 if passes_gate(face, w, h):
                     kept.append((f.idx, face))
