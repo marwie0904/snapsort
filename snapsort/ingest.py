@@ -1,5 +1,6 @@
 """Ingest: resolve inputs, extract frames, run modules, validate and store results."""
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -12,6 +13,7 @@ import pillow_heif
 from PIL import Image, ImageOps
 
 from snapsort.contract import Frame, Module, Result
+from snapsort.library import ensure_library, root_for
 
 pillow_heif.register_heif_opener()
 
@@ -19,6 +21,10 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv", ".webm"}
 FPS = 1
 BATCH = 16
+PREVIEW = 512
+JUNK = {"$RECYCLE.BIN", "System Volume Information"}
+PACKAGES = (".photoslibrary", ".photolibrary", ".fcpbundle", ".imovielibrary")  # app libraries: duplicates
+DATALESS = 0x40000000  # SF_DATALESS: in iCloud, reading it starts a download
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS media (
@@ -47,6 +53,12 @@ CREATE TABLE IF NOT EXISTS results (
 );
 CREATE INDEX IF NOT EXISTS results_module_label ON results(module, label);
 CREATE INDEX IF NOT EXISTS results_module_frame ON results(module, frame_id);
+CREATE INDEX IF NOT EXISTS results_frame ON results(frame_id);  -- deleting media scans results by frame
+CREATE TABLE IF NOT EXISTS sources (
+  id       INTEGER PRIMARY KEY,
+  path     TEXT NOT NULL UNIQUE,   -- folder given to ingest, relative to the library root
+  added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS runs (
   media_id    INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
   module      TEXT NOT NULL,
@@ -125,21 +137,27 @@ def classify(path: Path) -> str | None:
     return "image" if ext in IMAGE_EXTS else "video" if ext in VIDEO_EXTS else None
 
 
-def resolve_paths(paths: list[Path]) -> list[Path]:
+def resolve_paths(paths: list[Path], exclude: Path | None = None, errors: list | None = None) -> list[Path]:
     """Absolute file paths to process. Explicit files are kept as given (even unsupported or
     missing, so the runner can report them). Directories are recursed, keeping supported files
-    and ignoring anything under a dot-folder below the directory."""
+    and ignoring dot files and folders, `exclude` (the library's own data dir), junk folders,
+    app library packages and iCloud files not downloaded. Unreadable subfolders go to `errors`."""
     out = []
     for p in paths:
         p = p.resolve()
-        if p.is_dir():
-            out += sorted(
-                f for f in p.rglob("*")
-                if f.is_file() and classify(f)
-                and not any(part.startswith(".") for part in f.relative_to(p).parts)
-            )
-        else:
+        if not p.is_dir():
             out.append(p)
+            continue
+        found = []
+        for dirpath, dirnames, filenames in os.walk(p, onerror=None if errors is None else errors.append):
+            d = Path(dirpath)
+            dirnames[:] = [n for n in dirnames if not n.startswith(".") and n not in JUNK
+                           and not n.lower().endswith(PACKAGES) and d / n != exclude]
+            for n in filenames:
+                f = d / n
+                if not n.startswith(".") and classify(f) and f.is_file() and not os.stat(f).st_flags & DATALESS:
+                    found.append(f)
+        out += sorted(found)
     return out
 
 
@@ -175,34 +193,111 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def run_ingest(paths: list[Path], modules: list[Module], data_dir: Path) -> bool:
+class IngestError(Exception):
+    """The whole run can't start. code is one of the frontend's error codes."""
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def run_ingest(paths: list[Path], modules: list[Module], data_dir: Path, progress=None,
+               prune: bool = False) -> bool:
     """Process every file with every module that hasn't run on it at its current version.
-    Returns True if every file and module succeeded."""
-    data_dir.mkdir(parents=True, exist_ok=True)
+    progress(event) gets {"event": "start" | "file", ...} dicts. prune deletes media under the given
+    folders whose file is gone, unless a subfolder couldn't be read. Returns True if every file and
+    module succeeded. Raises IngestError if an input is outside the library or unreadable."""
+    progress = progress or (lambda e: None)
+    root = root_for(data_dir)
+    for p in paths:
+        p = p.resolve()
+        if p != root and root not in p.parents:
+            raise IngestError("OUTSIDE_LIBRARY", f"{p} is not under the library root {root}")
+        if p.is_dir() and not os.access(p, os.R_OK | os.X_OK):
+            raise IngestError("PERMISSION_DENIED", f"can't read {p}")
+    try:
+        ensure_library(data_dir)
+    except OSError as e:
+        raise IngestError("READ_ONLY", f"can't write {data_dir}: {e}") from e
     conn = connect(data_dir / "snapsort.db")
     active: list[Module] = list(modules)   # modules whose setup() fails are removed
     ready: set[str] = set()                # modules whose setup() has run
     dims: dict[str, int] = {}              # vector dim per module, fixed for the run
     ok = True
     try:
+        dirs = [p.resolve() for p in paths if p.is_dir()]
+        with conn:
+            conn.executemany("INSERT OR IGNORE INTO sources (path) VALUES (?)",
+                             [(_rel(d, root),) for d in dirs])
+        unreadable: list[OSError] = []
+        files = resolve_paths(paths, data_dir.resolve(), unreadable)
+        progress({"event": "start", "total": len(files)})
         with ThreadPoolExecutor(max_workers=max(1, len(modules))) as pool:
-            for path in resolve_paths(paths):
+            for i, path in enumerate(files):
                 if not active:
                     print("error: no modules left to run", file=sys.stderr)
                     return False
-                ok &= _ingest_file(conn, pool, path, active, ready, dims, data_dir / "frames")
+                done = _ingest_file(conn, pool, path, active, ready, dims, data_dir, root)
+                ok &= done
+                progress({"event": "file", "done": i + 1, "total": len(files), "path": str(path), "ok": done})
+        if unreadable:
+            ok = False
+            for e in unreadable:
+                print(f"skip {e.filename} (can't read: {e.strerror})", file=sys.stderr)
+        elif prune:
+            _prune(conn, dirs, data_dir, root)
     finally:
         conn.close()
     return ok
 
 
-def _ingest_file(conn, pool, path, active, ready, dims, frames_root) -> bool:
+def _rel(path: Path, root: Path) -> str:
+    """A path as stored: relative to the library root, "" for the root itself."""
+    rel = path.relative_to(root).as_posix()
+    return "" if rel == "." else rel
+
+
+def frame_file(data_dir: Path, root: Path, kind: str, media_path: str, frame_path: str) -> Path:
+    """The image file of a frame: the original for an image, the extracted JPEG for a video."""
+    return root / media_path if kind == "image" else data_dir / frame_path
+
+
+def preview_file(data_dir: Path, media_id: int, idx: int) -> Path:
+    return data_dir / "previews.noindex" / str(media_id) / f"{idx:06d}.jpg"
+
+
+def _preview(image: Image.Image, out: Path) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    small = image.copy()
+    small.thumbnail((PREVIEW, PREVIEW))
+    small.save(out, "JPEG", quality=82)
+
+
+def _prune(conn, dirs: list[Path], data_dir: Path, root: Path) -> None:
+    """Delete media under dirs whose file no longer exists, with their frames and previews."""
+    gone = []
+    for d in dirs:
+        prefix = _rel(d, root)
+        rows = conn.execute("SELECT id, path FROM media").fetchall() if not prefix else conn.execute(
+            "SELECT id, path FROM media WHERE path = ? OR substr(path, 1, ?) = ?",
+            (prefix, len(prefix) + 1, prefix + "/")).fetchall()
+        gone += [mid for mid, p in rows if not (root / p).exists()]
+    with conn:
+        conn.executemany("DELETE FROM media WHERE id = ?", [(m,) for m in gone])
+    for m in gone:
+        shutil.rmtree(data_dir / "frames.noindex" / str(m), ignore_errors=True)
+        shutil.rmtree(data_dir / "previews.noindex" / str(m), ignore_errors=True)
+    if gone:
+        print(f"pruned {len(gone)} missing files")
+
+
+def _ingest_file(conn, pool, path, active, ready, dims, data_dir, root) -> bool:
     if not path.is_file():
         return _skip(path, "not found")
     kind = classify(path)
     if kind is None:
         return _skip(path, "unsupported file type")
-    row = conn.execute("SELECT id FROM media WHERE path = ?", (str(path),)).fetchone()
+    rel = _rel(path, root)
+    row = conn.execute("SELECT id FROM media WHERE path = ?", (rel,)).fetchone()
     if row:
         media_id = row[0]
         pending = _pending(conn, media_id, active)
@@ -212,7 +307,7 @@ def _ingest_file(conn, pool, path, active, ready, dims, frames_root) -> bool:
     else:
         pending = list(active)
         try:
-            media_id = _register(conn, path, kind, frames_root)
+            media_id = _register(conn, path, rel, kind, data_dir)
         except Exception as e:
             return _skip(path, _msg(e))
 
@@ -224,13 +319,18 @@ def _ingest_file(conn, pool, path, active, ready, dims, frames_root) -> bool:
     ok = True
     for i in range(0, len(frames), BATCH):
         try:
-            batch = [Frame(media_id, str(path), kind, idx, ts, load_image(fp))
+            batch = [Frame(media_id, str(path), kind, idx, ts, load_image(frame_file(data_dir, root, kind, rel, fp)))
                      for _, idx, ts, fp in frames[i:i + BATCH]]
+            for f in batch:
+                out = preview_file(data_dir, media_id, f.idx)
+                if not out.is_file():
+                    _preview(f.image, out)
         except Exception as e:
             if row is None:  # registered by this call: undo it so the next run retries cleanly
                 with conn:
                     conn.execute("DELETE FROM media WHERE id = ?", (media_id,))
-                shutil.rmtree(frames_root / str(media_id), ignore_errors=True)
+                shutil.rmtree(data_dir / "frames.noindex" / str(media_id), ignore_errors=True)
+                shutil.rmtree(data_dir / "previews.noindex" / str(media_id), ignore_errors=True)
             return _skip(path, f"cannot read frame: {_msg(e)}")
         futures = {m: pool.submit(_call, m, batch, ready)
                    for m in pending if m in active and m.name not in errors}
@@ -266,17 +366,19 @@ def _pending(conn, media_id: int, modules: list[Module]) -> list[Module]:
     return [m for m in modules if done.get(m.name) != m.version]
 
 
-def _register(conn, path: Path, kind: str, frames_root: Path) -> int:
-    """Insert the media row and its frames in one transaction. Raises if extraction fails."""
+def _register(conn, path: Path, rel: str, kind: str, data_dir: Path) -> int:
+    """Insert the media row and its frames in one transaction. Raises if extraction fails.
+    Frame paths are stored relative: the media path for an image, the data dir for a video."""
     with conn:
         media_id = conn.execute(
-            "INSERT INTO media (path, kind) VALUES (?, ?)", (str(path), kind)
+            "INSERT INTO media (path, kind) VALUES (?, ?)", (rel, kind)
         ).lastrowid
         if kind == "image":
-            rows = [(media_id, 0, None, str(path))]
+            rows = [(media_id, 0, None, rel)]
         else:
-            files = extract_frames(path, frames_root / str(media_id))
-            rows = [(media_id, i, i / FPS, str(f.resolve())) for i, f in enumerate(files)]
+            shutil.rmtree(data_dir / "previews.noindex" / str(media_id), ignore_errors=True)  # a reused id's
+            files = extract_frames(path, data_dir / "frames.noindex" / str(media_id))
+            rows = [(media_id, i, i / FPS, f.relative_to(data_dir).as_posix()) for i, f in enumerate(files)]
         conn.executemany("INSERT INTO frames (media_id, idx, ts, path) VALUES (?, ?, ?, ?)", rows)
     return media_id
 

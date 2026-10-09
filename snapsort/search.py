@@ -3,6 +3,7 @@
 Design: docs/design/2026-10-09-filters.md."""
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -17,6 +18,10 @@ MIN_SCORE = 0.5   # calibrated on a real folder, see the design's Findings
 TEXT_MIN_SCORE = 0.01   # SigLIP match probability; provisional until calibrated on a real folder
 CHUNK = 900       # media ids per IN (...) query, under SQLite's oldest variable limit (999)
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+CACHE_MODELS = False  # the long-lived `snapsort serve` turns this on; the CLI loads each model once anyway
+_models: dict[type, object] = {}
+_models_lock = threading.Lock()
 
 Match = dict[int, set[int] | None]   # media id -> matched frame ids; None = the whole file, no frame marks
 
@@ -236,11 +241,42 @@ def _is_day(s) -> bool:
     return True
 
 
-FILTERS = {"person": _person, "place": _place, "mediaKind": _media_kind, "date": _date}
+def _label(conn, f: dict, scope: str) -> Match:
+    """Files with the labels of a module (objects by default): all of them (in the same file, or frame under
+    scope "frame") or any of them. Marked with the frames they appear in."""
+    module = f.get("module") or "objects"
+    ids = list(dict.fromkeys(str(i).strip().lower() for i in (f.get("labelIds") or [f.get("labelId")]) if i))
+    if not ids:
+        raise QueryError("label filter needs at least one label")
+    each = [_by_media(conn.execute(
+        "SELECT f.media_id, r.frame_id FROM results r JOIN frames f ON f.id = r.frame_id "
+        "WHERE r.module = ? AND r.label = ?", (module, label))) for label in ids]
+    if f.get("match", "all") == "any":
+        return _union(each)
+    return _same_frame(each) if scope == "frame" else _same_file(each)
+
+
+FILTERS = {"person": _person, "place": _place, "mediaKind": _media_kind, "date": _date, "label": _label}
+
+
+def _loaded(cls):
+    """A set-up model instance, kept for the process when CACHE_MODELS is on."""
+    if not CACHE_MODELS:
+        model = cls()
+        model.setup()
+        return model
+    with _models_lock:
+        if cls not in _models:
+            model = cls()
+            model.setup()
+            _models[cls] = model
+        return _models[cls]
 
 
 def _query_vector(conn, similar: dict) -> np.ndarray:
-    """The unit vector frames are compared against: a stored frame's, or a query image's."""
+    """The unit vector frames are compared against: a given one, a stored frame's, or a query image's."""
+    if "vector" in similar:
+        return np.asarray(similar["vector"], "<f4")
     if "mediaId" in similar:
         mid, ts = similar["mediaId"], similar.get("ts")
         if conn.execute("SELECT 1 FROM media WHERE id = ?", (mid,)).fetchone() is None:
@@ -264,9 +300,7 @@ def _query_vector(conn, similar: dict) -> np.ndarray:
             raise QueryError("no image_embed vectors in this library. run snapsort ingest --modules image_embed")
         from snapsort.modules.image_embed import ImageEmbed  # torch loads only for a path query
         try:
-            model = ImageEmbed()
-            model.setup()
-            return model.embed([image])[0]
+            return _loaded(ImageEmbed).embed([image])[0]
         except Exception as e:  # e.g. weights not cached and no network
             raise QueryError(f"image_embed model failed: {type(e).__name__}: {e}") from e
     raise QueryError("similar needs mediaId or path")
@@ -281,8 +315,7 @@ def _text_query(conn, q) -> tuple[np.ndarray, object]:
         raise QueryError("no clip_embed vectors in this library. run snapsort ingest --modules clip_embed")
     from snapsort.modules.clip_embed import ClipEmbed  # torch loads only for a text query
     try:
-        clip = ClipEmbed()
-        clip.setup()
+        clip = _loaded(ClipEmbed)
         return clip.embed_text([text])[0], clip.match_probability
     except Exception as e:  # e.g. weights not cached and no network
         raise QueryError(f"clip_embed model failed: {type(e).__name__}: {e}") from e

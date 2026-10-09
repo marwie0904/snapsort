@@ -304,7 +304,7 @@ def test_sorts_and_limit(db):
      "date range starts after it ends: 2026-08-01 > 2026-07-01"),
     ([{"kind": "date", "from": "2026-07-01"}],
      "1 of 1 files were never checked for a capture date. run snapsort ingest --modules capture_date"),
-    ([{"kind": "label", "module": "objects", "labelId": "dog"}], "unsupported filter kind: 'label'"),
+    ([{"kind": "label", "module": "objects", "labelIds": []}], "label filter needs at least one label"),
     ([{"kind": "folder", "id": 1}], "unsupported filter kind: 'folder'"),
 ])
 def test_filter_errors(db, filters, message):
@@ -731,3 +731,16 @@ def test_clock_format():
     assert cli._clock(3725.0) == "1:02:05"
     assert cli._span(Segment(10.0, 10.0, None)) == "0:10"
     assert cli._span(Segment(1.0, 6.0, None)) == "0:01–0:06"
+
+
+def test_label_filter_all_and_any(db):
+    """Object labels: all of them in the file (on any frames) or any of them, marked with their frames."""
+    def obj(fid, label):
+        with db:
+            db.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'objects', ?)", (fid, label))
+    _, v = media(db, "video", frames=4, name="v.mov")
+    _, i = media(db, "image", name="i.jpg")
+    obj(v[1], "dog"), obj(v[3], "cake"), obj(i[0], "dog")
+    assert [h.path for h in search(db, [{"kind": "label", "labelIds": ["Dog", "cake"]}])] == ["/lib/v.mov"]
+    hits = search(db, [{"kind": "label", "labelIds": ["dog", "cake"], "match": "any"}], sort="name")
+    assert [(h.path, ts_of(h)) for h in hits] == [("/lib/i.jpg", []), ("/lib/v.mov", [1.0, 3.0])]

@@ -2,11 +2,14 @@
 import argparse
 import inspect
 import json
+import os
+import signal
 import sys
 from pathlib import Path
 
 from snapsort.group import run_grouping
-from snapsort.ingest import run_ingest
+from snapsort.ingest import IngestError, run_ingest
+from snapsort.library import root_for
 from snapsort.modules import discover
 from snapsort.search import (GAP, MIN_SCORE, SORTS, TEXT_MIN_SCORE, Hit, QueryError, Segment, list_people,
                              list_places, open_db, search)
@@ -17,13 +20,19 @@ READS = ("group", "search", "people", "places")  # commands that need an existin
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="snapsort")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--data-dir", type=Path, default=DATA_DIR,
+                        help=f"library folder (default {DATA_DIR}). media paths are stored relative to its drive")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    ingest = sub.add_parser("ingest", help="process image/video files or folders")
+    ingest = sub.add_parser("ingest", parents=[common], help="process image/video files or folders")
     ingest.add_argument("paths", nargs="+", type=Path)
     ingest.add_argument("--modules", help="comma-separated module names (default: all)")
+    ingest.add_argument("--json", action="store_true", help="progress as JSON lines on stdout, logs on stderr")
+    ingest.add_argument("--prune", action="store_true", help="forget files under the folders that no longer exist")
     sub.add_parser("modules", help="list discovered modules")
-    sub.add_parser("group", help="group face results into persons")
-    s = sub.add_parser("search", help="find media matching every given filter")
+    sub.add_parser("group", parents=[common], help="group face results into persons")
+    sub.add_parser("serve", help="JSON-lines server on stdio for the desktop app")
+    s = sub.add_parser("search", parents=[common], help="find media matching every given filter")
     s.add_argument("text", nargs="?", help="describe what to find (needs clip_embed vectors)")
     s.add_argument("--person", type=_ids, help="comma-separated person ids, all in the same file (see `snapsort people`)")
     s.add_argument("--any", action="store_true", help="match any --person id instead of all")
@@ -46,15 +55,18 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--gap", type=float, default=GAP,
                    help=f"seconds between matches that still merge into one segment (default {GAP:g})")
     s.add_argument("--json", action="store_true")
-    sub.add_parser("people", help="list persons: id, name, faces, files")
-    sub.add_parser("places", help="list place names: place, files")
+    sub.add_parser("people", parents=[common], help="list persons: id, name, faces, files")
+    sub.add_parser("places", parents=[common], help="list place names: place, files")
     args = parser.parse_args(argv)
 
+    if args.cmd == "serve":
+        from snapsort.serve import serve
+        return serve()
     if args.cmd in READS:
-        if not (DATA_DIR / "snapsort.db").is_file():
-            print(f"error: no database at {DATA_DIR / 'snapsort.db'}", file=sys.stderr)
+        if not (args.data_dir / "snapsort.db").is_file():
+            print(f"error: no database at {args.data_dir / 'snapsort.db'}", file=sys.stderr)
             return 2
-        return (0 if _group() else 1) if args.cmd == "group" else _read(args)
+        return (0 if _group(args.data_dir) else 1) if args.cmd == "group" else _read(args)
     try:
         modules = discover()
     except ValueError as e:
@@ -76,16 +88,37 @@ def main(argv: list[str] | None = None) -> int:
     if not modules:
         print("error: no modules to run", file=sys.stderr)
         return 2
-    ok = run_ingest(args.paths, modules, DATA_DIR)
-    if any(m.name == "faces" for m in modules):  # the frontend expects people to refresh when ingest ends
-        ok = _group() and ok
-    return 0 if ok else 1
+    emit = _events() if args.json else (lambda e: None)
+    end = {"event": "end", "ok": False}
+    try:
+        ok = run_ingest(args.paths, modules, args.data_dir, emit, args.prune)
+        if any(m.name == "faces" for m in modules):  # the frontend expects people to refresh when ingest ends
+            emit({"event": "grouping"})
+            ok = _group(args.data_dir) and ok
+        end["ok"] = ok
+        return 0 if ok else 1
+    except IngestError as e:
+        print(f"error: {e}", file=sys.stderr)
+        end.update(code=e.code, message=str(e))
+        return 2
+    finally:
+        emit(end)
 
 
-def _group() -> bool:
+def _events():
+    """Under --json: protocol lines go to the real stdout, and everything else printed (ours, ffmpeg's,
+    model loaders') goes to stderr. SIGTERM exits through finally blocks, so ffmpeg is killed and end is sent."""
+    sys.stdout.flush()
+    proto = os.fdopen(os.dup(1), "w", buffering=1)
+    os.dup2(2, 1)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    return lambda e: (proto.write(json.dumps(e, allow_nan=False) + "\n"), proto.flush())
+
+
+def _group(data_dir: Path) -> bool:
     """Run grouping and print its one-line summary. False if it failed, in which case nothing was written."""
     try:
-        s = run_grouping(DATA_DIR)
+        s = run_grouping(data_dir)
     except Exception as e:
         print(f"error: grouping failed: {type(e).__name__}: {e}", file=sys.stderr)
         return False
@@ -95,7 +128,8 @@ def _group() -> bool:
 
 def _read(args) -> int:
     """search, people and places. 2 on a QueryError."""
-    conn = open_db(DATA_DIR)
+    conn = open_db(args.data_dir)
+    root = root_for(args.data_dir)
     try:
         if args.cmd == "people":
             for pid, name, faces, files in list_people(conn):
@@ -125,6 +159,8 @@ def _read(args) -> int:
         total = conn.execute("SELECT count(*) FROM media").fetchone()[0]
     finally:
         conn.close()
+    for h in hits:
+        h.path = str(root / h.path)
     if args.json:
         print(json.dumps([_json(h) for h in hits], ensure_ascii=False))
         return 0

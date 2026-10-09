@@ -60,16 +60,47 @@ def test_frames_per_media(sample_image, sample_video, data_dir):
     rows = q(data_dir, "SELECT m.kind, f.idx, f.ts, f.path FROM frames f "
                        "JOIN media m ON m.id = f.media_id ORDER BY m.kind, f.idx")
     assert [r[:3] for r in rows] == [("image", 0, None), ("video", 0, 0.0), ("video", 1, 1.0), ("video", 2, 2.0)]
-    assert rows[0][3] == str(sample_image.resolve())
-    assert all(Path(r[3]).is_file() for r in rows)
+    assert rows[0][3] == str(sample_image.resolve())[1:]  # relative to the library root, / for .snapsort
+    assert all((data_dir / r[3]).is_file() for r in rows[1:])
+    assert rows[1][3] == "frames.noindex/2/000000.jpg"
 
 
-def test_video_frame_paths_absolute_with_relative_data_dir(sample_video, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    assert run_ingest([sample_video], [Counter("a")], Path(".snapsort"))
-    paths = [Path(p) for (p,) in q(tmp_path / ".snapsort", "SELECT path FROM frames")]
-    assert len(paths) == 3
-    assert all(p.is_absolute() and p.is_file() for p in paths)
+def test_library_on_a_drive_survives_a_new_mount_path(sample_image, sample_video, tmp_path):
+    """<root>/snapsort stores paths relative to <root>, so the drive can mount somewhere else."""
+    drive = tmp_path / "drive"
+    (drive / "shoot").mkdir(parents=True)
+    for f in (sample_image, sample_video):
+        f.rename(drive / "shoot" / f.name)
+    assert run_ingest([drive / "shoot"], [Counter("a")], drive / "snapsort")
+    lib_id = (drive / "snapsort" / "library.json").read_text()
+    moved = tmp_path / "drive 1"
+    drive.rename(moved)
+    assert q(moved / "snapsort", "SELECT path FROM media ORDER BY path") == [("shoot/clip.mp4",), ("shoot/red.png",)]
+    assert q(moved / "snapsort", "SELECT path FROM sources") == [("shoot",)]
+    again = Counter("a")
+    assert run_ingest([moved / "shoot"], [again], moved / "snapsort")
+    assert again.calls == 0 and (moved / "snapsort" / "library.json").read_text() == lib_id
+    assert len(list((moved / "snapsort" / "previews.noindex").rglob("*.jpg"))) == 4
+
+
+def test_drive_root_skips_its_own_data_dir_and_prune_forgets_deleted(sample_image, tmp_path):
+    drive = tmp_path / "drive"
+    drive.mkdir()
+    sample_image.rename(drive / "red.png")
+    assert run_ingest([drive], [Counter("a")], drive / "snapsort")
+    assert run_ingest([drive], [Counter("a")], drive / "snapsort")  # previews under snapsort/ aren't media
+    assert q(drive / "snapsort", "SELECT path FROM media") == [("red.png",)]
+    (drive / "red.png").unlink()
+    assert run_ingest([drive], [Counter("a")], drive / "snapsort", prune=True)
+    assert q(drive / "snapsort", "SELECT count(*) FROM media") == [(0,)]
+    assert not (drive / "snapsort" / "previews.noindex" / "1").exists()
+
+
+def test_progress_events(sample_image, sample_video, data_dir):
+    events = []
+    assert run_ingest([sample_image.parent], [Counter("a")], data_dir, events.append)
+    assert events[0] == {"event": "start", "total": 2}
+    assert [(e["done"], e["ok"]) for e in events[1:]] == [(1, True), (2, True)]
 
 
 def test_results_and_runs_stored(sample_image, sample_video, data_dir):
@@ -140,7 +171,7 @@ def test_missing_unsupported_and_corrupt_files_skipped(tmp_path, data_dir):
     for path in [tmp_path / "missing.jpg", notes, corrupt, bad_image]:
         assert run_ingest([path], [Counter("a")], data_dir) is False
     assert q(data_dir, "SELECT count(*) FROM media") == [(0,)]
-    assert not any((data_dir / "frames").glob("*"))
+    assert not any((data_dir / "frames.noindex").glob("*"))
 
 
 def test_new_image_decoded_once(sample_image, data_dir, monkeypatch):
@@ -155,7 +186,7 @@ def test_ingest_dot_ignores_own_data_dir(tmp_path, sample_video, data_dir):
     (tmp_path / "notes.txt").write_text("ignored silently")
     assert run_ingest([tmp_path], [Counter("a")], data_dir)
     assert run_ingest([tmp_path], [Counter("a")], data_dir)
-    assert q(data_dir, "SELECT path FROM media") == [(str(sample_video.resolve()),)]
+    assert q(data_dir, "SELECT path FROM media") == [(str(sample_video.resolve())[1:],)]
 
 
 def test_modules_run_concurrently(sample_image, data_dir):
