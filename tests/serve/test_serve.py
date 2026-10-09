@@ -84,3 +84,14 @@ def test_corrupt_library_is_skipped(tmp_path, monkeypatch):
     assert [lib["name"] for lib in call("listLibraries")] == ["A"]
     assert call("query", search={"f": []}, limit=5)["total"] == 1
     assert call("getCounts")["all"] == 1
+
+
+def test_cloned_drive_is_skipped(tmp_path, monkeypatch):
+    a = drive(tmp_path, "A", [("a.png", "red")])
+    clone = tmp_path / "A 1" / "snapsort"
+    clone.parent.mkdir()
+    import shutil
+    shutil.copytree(a, clone)
+    monkeypatch.setattr(serve, "mounted", lambda: [a, clone])
+    assert [lib["root"] for lib in call("listLibraries")] == [str(tmp_path / "A")]
+    assert call("getCounts")["all"] == 1

@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 import snapsort.ingest as ingest
 from snapsort.contract import Module, Result
@@ -215,3 +216,39 @@ def test_missing_frames_are_extracted_again(sample_video, data_dir):
     b = Counter("b")
     assert run_ingest([sample_video], [Counter("a"), b], data_dir)
     assert b.calls == 1 and q(data_dir, "SELECT count(*) FROM frames") == [(3,)]
+
+
+def test_unreadable_folder_is_permission_denied(tmp_path, data_dir):
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0)
+    try:
+        with pytest.raises(ingest.IngestError) as e:
+            run_ingest([locked], [Counter("a")], data_dir)
+        assert e.value.code == "PERMISSION_DENIED"
+    finally:
+        locked.chmod(0o755)
+
+
+def test_unreadable_subfolder_reports_and_prunes_nothing(sample_image, tmp_path, data_dir):
+    events = []
+    gone = sample_image.parent / "gone.png"
+    sample_image.rename(gone)
+    assert run_ingest([gone.parent], [Counter("a")], data_dir)
+    gone.unlink()
+    sub = gone.parent / "sub"
+    sub.mkdir()
+    sub.chmod(0)
+    try:
+        assert run_ingest([gone.parent], [Counter("a")], data_dir, events.append, prune=True) is False
+    finally:
+        sub.chmod(0o755)
+    assert [e["code"] for e in events if e["event"] == "error"] == ["PERMISSION_DENIED"]
+    assert q(data_dir, "SELECT count(*) FROM media") == [(1,)]  # the deleted file is kept: nothing pruned
+
+
+def test_full_drive_stops_with_disk_full(sample_image, data_dir, monkeypatch):
+    monkeypatch.setattr(ingest, "MIN_FREE", 2 ** 62)
+    with pytest.raises(ingest.IngestError) as e:
+        run_ingest([sample_image], [Counter("a")], data_dir)
+    assert e.value.code == "DISK_FULL"

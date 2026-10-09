@@ -109,6 +109,8 @@ export class IngestQueue {
         job.total = e.total ?? job.total;
       } else if (e.event === 'grouping') {
         job.phase = 'grouping';
+      } else if (e.event === 'error') {
+        job.error = { code: e.code ?? 'ERROR', message: e.message ?? '' };
       } else if (e.event === 'end') {
         ended = true;
         if (e.code) {
@@ -116,7 +118,7 @@ export class IngestQueue {
           job.error = { code: e.code, message: e.message ?? e.code };
         } else {
           job.state = 'done';
-          if (!e.ok) job.error = { code: 'SOME_FILES_FAILED', message: 'some files could not be processed' };
+          if (!e.ok && !job.error) job.error = { code: 'SOME_FILES_FAILED', message: 'some files could not be processed' };
         }
       }
       this.update(job);

@@ -81,6 +81,10 @@ def libraries() -> list[Lib]:
         except sqlite3.DatabaseError as e:
             print(f"serve: skipping {d}: {e}", file=sys.stderr)
             continue
+        if any(o.id == lid for o in out):  # a cloned drive: its ids would route to the original
+            print(f"serve: skipping {d}: same library id as {next(o for o in out if o.id == lid).data_dir}",
+                  file=sys.stderr)
+            continue
         out.append(lib)
     return out
 

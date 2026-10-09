@@ -1,5 +1,6 @@
 """snapsort command line."""
 import argparse
+import errno
 import inspect
 import json
 import os
@@ -106,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
         traceback.print_exc()
         if not args.data_dir.exists():  # the drive was pulled; its database is intact, a rescan resumes
             end.update(code="DRIVE_GONE", message="the drive was disconnected")
+        elif getattr(e, "errno", None) == errno.ENOSPC or "disk is full" in str(e):
+            end.update(code="DISK_FULL", message="the drive is full. free some space, then rescan")
         else:
             end.update(code="INGEST_FAILED", message=f"{type(e).__name__}: {e}")
         return 1

@@ -25,6 +25,7 @@ PREVIEW = 512
 JUNK = {"$RECYCLE.BIN", "System Volume Information"}
 PACKAGES = (".photoslibrary", ".photolibrary", ".fcpbundle", ".imovielibrary")  # app libraries: duplicates
 DATALESS = 0x40000000  # SF_DATALESS: in iCloud, reading it starts a download
+MIN_FREE = 500 * 1024 ** 2  # stop before a file when the library's drive has less free: an hour of video takes ~1 GB
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS media (
@@ -212,8 +213,13 @@ def run_ingest(paths: list[Path], modules: list[Module], data_dir: Path, progres
         p = p.resolve()
         if p != root and root not in p.parents:
             raise IngestError("OUTSIDE_LIBRARY", f"{p} is not under the library root {root}")
-        if p.is_dir() and not os.access(p, os.R_OK | os.X_OK):
-            raise IngestError("PERMISSION_DENIED", f"can't read {p}")
+        if p.is_dir():
+            try:  # listing catches a macOS privacy (TCC) denial too, which os.access doesn't see
+                with os.scandir(p) as it:
+                    next(it, None)
+            except PermissionError as e:
+                raise IngestError("PERMISSION_DENIED", f"can't read {p}: {e.strerror}. "
+                                  "allow access in System Settings > Privacy & Security") from e
     try:
         ensure_library(data_dir)
     except OSError as e:
@@ -236,6 +242,10 @@ def run_ingest(paths: list[Path], modules: list[Module], data_dir: Path, progres
                 if not active:
                     print("error: no modules left to run", file=sys.stderr)
                     return False
+                free = shutil.disk_usage(data_dir).free
+                if free < MIN_FREE:
+                    raise IngestError("DISK_FULL", f"only {free // 1024 ** 2} MB free on the library's drive. "
+                                      "free some space, then rescan")
                 done = _ingest_file(conn, pool, path, active, ready, dims, data_dir, root)
                 ok &= done
                 progress({"event": "file", "done": i + 1, "total": len(files), "path": str(path), "ok": done})
@@ -243,6 +253,9 @@ def run_ingest(paths: list[Path], modules: list[Module], data_dir: Path, progres
             ok = False
             for e in unreadable:
                 print(f"skip {e.filename} (can't read: {e.strerror})", file=sys.stderr)
+            progress({"event": "error", "code": "PERMISSION_DENIED",
+                      "message": f"couldn't read {len(unreadable)} folder(s), e.g. {unreadable[0].filename}. "
+                                 "nothing was removed"})
         elif prune:
             _prune(conn, dirs, data_dir, root)
     finally:
