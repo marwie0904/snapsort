@@ -34,12 +34,15 @@ if (app.isPackaged) {
   }
 }
 
-// Disable hardware acceleration to resolve dual-GPU / Optimus laptop invisible window bugs
-app.disableHardwareAcceleration();
+// Not on macOS: Chromium has no software HEVC decoder, so iPhone video needs the GPU there
+if (process.platform !== 'darwin') {
+  // Disable hardware acceleration to resolve dual-GPU / Optimus laptop invisible window bugs
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('no-sandbox');
+}
 
 // Silence GPU cache lock warning on Windows
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-app.commandLine.appendSwitch('no-sandbox');
 
 let mainWindow: BrowserWindow | null = null;
 let shelfWindow: BrowserWindow | null = null;

@@ -1,5 +1,64 @@
-import { protocol, net } from 'electron';
-import { pathToFileURL } from 'url';
+import { protocol } from 'electron';
+import { createReadStream, promises as fs } from 'fs';
+import { extname } from 'path';
+import { Readable } from 'stream';
+
+const MIME: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.heic': 'image/heic',
+};
+
+// Streams from disk instead of net.fetch, which breaks seeking in Electron 34 (electron#38749)
+export async function serveFile(filePath: string, range: string | null): Promise<Response> {
+  let size: number;
+  try {
+    const st = await fs.stat(filePath);
+    if (!st.isFile()) return new Response(null, { status: 404 });
+    size = st.size;
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': MIME[extname(filePath).toLowerCase()] ?? 'application/octet-stream',
+    'Accept-Ranges': 'bytes',
+  };
+  const body = (start: number, end: number) =>
+    Readable.toWeb(createReadStream(filePath, { start, end })) as unknown as ReadableStream;
+
+  // Single ranges only. Anything else gets the whole file, which RFC 9110 allows.
+  const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;
+  if (!m || (m[1] === '' && m[2] === '')) {
+    headers['Content-Length'] = String(size);
+    return new Response(size ? body(0, size - 1) : null, { status: 200, headers });
+  }
+
+  let start: number;
+  let end: number;
+  if (m[1] === '') {
+    start = Math.max(0, size - Number(m[2]));
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  }
+  if (start >= size || start > end) {
+    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  }
+
+  headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+  headers['Content-Length'] = String(end - start + 1);
+  return new Response(body(start, end), { status: 206, headers });
+}
 
 export function registerMediaProtocol(): void {
   protocol.handle('snapsort-media', async (request) => {
@@ -7,14 +66,9 @@ export function registerMediaProtocol(): void {
     const host = url.host; // 'preview', 'frame', 'file'
     const pathname = decodeURIComponent(url.pathname);
 
-    // If host is 'file' and it's a real local path
+    // ponytail: raw absolute paths until Phase 4 switches to library IDs
     if (host === 'file') {
-      const filePath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
-      try {
-        return await net.fetch(pathToFileURL(filePath).toString());
-      } catch (e) {
-        // Fallback to placeholder if file doesn't exist
-      }
+      return serveFile(pathname, request.headers.get('Range'));
     }
 
     // Generate sleek, high-aesthetic SVG placeholders for previews & frames
