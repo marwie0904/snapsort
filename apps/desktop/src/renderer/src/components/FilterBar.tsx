@@ -263,7 +263,7 @@ export const FilterBar: React.FC = () => {
         if (f.kind === 'person') {
           const names = f.ids.map((id) => {
             const p = people.find((person) => person.id === id);
-            return p?.name || `Person #${id}`;
+            return p?.name || 'Unnamed person';
           });
           const matchJoiner = f.match === 'any' ? ' or ' : ' + ';
           tooltip = `People (${f.match}): ${names.join(matchJoiner)}`;

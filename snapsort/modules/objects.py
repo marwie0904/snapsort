@@ -1,9 +1,15 @@
 """Object detection with Ultralytics YOLO11m."""
 from pathlib import Path
 
+from PIL import Image
 from ultralytics import YOLO
+from ultralytics.utils import patches
 
 from snapsort.contract import Frame, Module, Result
+
+# Importing ultralytics replaces PIL's Image.open with one that, on any unreadable file, pip-installs pi-heif
+# and raises that error instead. pillow_heif already reads HEIC, so put the original back.
+Image.open = patches._image_open
 
 MODEL = "yolo11m.pt"
 CACHE = Path.home() / ".cache" / "snapsort"

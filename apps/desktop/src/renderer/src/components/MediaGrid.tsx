@@ -13,7 +13,7 @@ interface MediaGridProps {
 function formatDuration(seconds?: number): string {
   if (!seconds) return '';
   const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
@@ -27,8 +27,8 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-4 pb-12">
       {items.map((item) => {
-        // In highlight mode, check if item is a match (score === 1 or 2 people)
-        const isMatch = item.score !== undefined ? item.score > 0 : item.faceCount === 2;
+        // In highlight mode, outline the items that pass the filters
+        const isMatch = item.matched ?? (item.score !== undefined && item.score > 0);
         const showYellowRing = viewMode === 'highlight' && isMatch;
         const inShelf = shelfItems.some((s) => s.id === item.id);
 

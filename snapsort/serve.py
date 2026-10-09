@@ -11,6 +11,7 @@ import sys
 import threading
 import zlib
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -41,10 +42,16 @@ class Lib:
     name: str
     external: bool
 
-    def db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.data_dir / "snapsort.db", timeout=10, check_same_thread=False)
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+    @contextmanager
+    def db(self):
+        """A connection for one request, committed and closed after: no handle stays open to block an eject."""
+        conn = sqlite3.connect(self.data_dir / "snapsort.db", timeout=10)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def gid(self, local: int) -> int:
         return self.key * SHIFT + local
@@ -209,7 +216,9 @@ def _run(lib: Lib, conn, filters, similar, q, sort, folder: str | None) -> list:
         raise
     if folder is not None and folder != "":
         hits = [h for h in hits if h.path.startswith(folder + "/")]
-    return hits
+    # a file shows once ingest has run a module on it: its previews exist by then
+    done = {r[0] for r in conn.execute("SELECT DISTINCT media_id FROM runs")}
+    return [h for h in hits if h.media_id in done]
 
 
 def query(params) -> dict:

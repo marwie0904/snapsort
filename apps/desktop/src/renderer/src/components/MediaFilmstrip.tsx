@@ -11,7 +11,7 @@ interface MediaFilmstripProps {
 function formatDuration(seconds?: number): string {
   if (!seconds) return '';
   const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
@@ -88,6 +88,19 @@ export const MediaFilmstrip: React.FC<MediaFilmstripProps> = ({
                   <ImageIcon size={18} className={isSelected ? 'text-sky-500 dark:text-[#38BDF8]' : 'text-[var(--text-muted)]'} />
                 )}
               </div>
+              <img
+                src={
+                  isVideo
+                    ? `snapsort-media://frame/${item.id}/${item.bestFrameTs ?? 0}`
+                    : `snapsort-media://preview/${item.id}`
+                }
+                alt=""
+                loading="lazy"
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
 
               {/* Duration or Icon Badge */}
               {isVideo && item.durationS && (

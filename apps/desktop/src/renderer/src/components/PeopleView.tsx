@@ -4,6 +4,7 @@ import { Search, User, Edit2, Check, X, Sparkles, Filter } from 'lucide-react';
 import { useUiStore } from '../stores/useUiStore';
 import { MockSnapsortApi } from '@snapsort/mock';
 import type { Person } from '@snapsort/contract';
+import { FaceImage } from './FaceImage';
 
 const mockApiFallback = new MockSnapsortApi();
 
@@ -87,6 +88,7 @@ export const PeopleView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['counts'] });
     } catch (err) {
       console.error('Failed to rename person:', err);
+      setPersonName(id, rawPeople.find((p) => p.id === id)?.name ?? ''); // roll back the optimistic name
     }
   };
 
@@ -195,11 +197,12 @@ export const PeopleView: React.FC = () => {
                       {/* Avatar */}
                       <div className="relative mb-2.5">
                         <div
-                          className={`w-20 h-20 rounded-full bg-gradient-to-br ${gradient} border-2 border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center shadow-md transition-transform duration-200 group-hover:scale-105 overflow-hidden`}
+                          className={`relative w-20 h-20 rounded-full bg-gradient-to-br ${gradient} border-2 border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center shadow-md transition-transform duration-200 group-hover:scale-105 overflow-hidden`}
                         >
                           <span className="text-xl font-bold tracking-tight">
                             {person.name?.slice(0, 2).toUpperCase() || <User size={24} />}
                           </span>
+                          <FaceImage src={person.faceRef} />
                         </div>
                       </div>
 
@@ -278,8 +281,9 @@ export const PeopleView: React.FC = () => {
                       className="group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs"
                     >
                       {/* Avatar */}
-                      <div className="w-20 h-20 rounded-full bg-[var(--surface-2)] border-2 border-dashed border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors shadow-sm mb-2.5">
+                      <div className="relative overflow-hidden w-20 h-20 rounded-full bg-[var(--surface-2)] border-2 border-dashed border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors shadow-sm mb-2.5">
                         <User size={24} strokeWidth={1.5} />
+                        <FaceImage src={person.faceRef} />
                       </div>
 
                       {/* Add Name Action */}

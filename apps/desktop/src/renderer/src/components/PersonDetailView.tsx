@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Edit2, Check, User, Filter, Sparkles, Film, Image } from 'lucide-react';
 import { Button } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
+import { FaceImage } from './FaceImage';
 import { MockSnapsortApi } from '@snapsort/mock';
 import { MediaGrid } from './MediaGrid';
 
@@ -53,7 +54,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
         search: {
           scope: 'all',
           sort: 'newest',
-          view: 'highlight',
+          view: 'filter',
           f: [{ kind: 'person', ids: [personId], match: 'all', source: 'user' }],
         },
         limit: 100,
@@ -79,6 +80,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
       queryClient.invalidateQueries({ queryKey: ['counts'] });
     } catch (err) {
       console.error('Failed to rename person:', err);
+      setPersonName(personId, rawPerson?.name ?? ''); // roll back the optimistic name
     }
   };
 
@@ -108,7 +110,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
       <div className="p-6 rounded-2xl bg-[var(--surface-1)] border border-[var(--border)] mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-xs">
         <div className="flex items-center gap-5">
           {/* Circular Face Avatar */}
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[var(--surface-3)] to-[var(--surface-2)] border-2 border-[var(--accent)] flex items-center justify-center text-[var(--accent)] shadow-md shrink-0 overflow-hidden">
+          <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-[var(--surface-3)] to-[var(--surface-2)] border-2 border-[var(--accent)] flex items-center justify-center text-[var(--accent)] shadow-md shrink-0 overflow-hidden">
             <span className="text-2xl font-bold tracking-tight">
               {displayName !== 'Unnamed Face' ? (
                 displayName.slice(0, 2).toUpperCase()
@@ -116,6 +118,7 @@ export const PersonDetailView: React.FC<PersonDetailViewProps> = ({ personId }) 
                 <User size={32} />
               )}
             </span>
+            <FaceImage src={rawPerson?.faceRef} />
           </div>
 
           {/* Editable Name & Counts */}

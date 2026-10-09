@@ -1,8 +1,8 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { registerMediaProtocol } from './mediaProtocol';
-import { MockSnapsortApi } from '@snapsort/mock';
+import { registerBackend } from './backend';
 import type { ShelfItem } from '@snapsort/contract';
 
 // Register custom protocol scheme before app is ready
@@ -48,7 +48,7 @@ let mainWindow: BrowserWindow | null = null;
 let shelfWindow: BrowserWindow | null = null;
 let shelfItems: ShelfItem[] = [];
 let isShelfPinned = true;
-const mockApi = new MockSnapsortApi();
+const mediaResolver = registerBackend(() => mainWindow);
 
 function broadcastShelfSync(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -134,7 +134,7 @@ function openShelfWindow(): void {
 app.whenReady().then(() => {
   console.log('[main] app.whenReady fired');
   try {
-    registerMediaProtocol();
+    registerMediaProtocol(mediaResolver);
     console.log('[main] media protocol registered');
   } catch (err) {
     console.error('[main] registerMediaProtocol error:', err);
@@ -187,6 +187,9 @@ function createWindow(): void {
   }
 
   mainWindow = new BrowserWindow(windowOptions);
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 
   mainWindow.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
     console.log(`[renderer console] ${message} (${sourceId}:${line})`);
@@ -212,91 +215,6 @@ function createWindow(): void {
   mainWindow.show();
   mainWindow.focus();
 }
-
-// IPC Handlers wiring SnapsortApi
-ipcMain.handle('api:query', async (_event, req) => {
-  return await mockApi.query(req);
-});
-
-ipcMain.handle('api:getMedia', async (_event, id) => {
-  return await mockApi.getMedia(id);
-});
-
-ipcMain.handle('api:getDetections', async (_event, id, ts) => {
-  return await mockApi.getDetections(id, ts);
-});
-
-ipcMain.handle('api:getCounts', async () => {
-  return await mockApi.getCounts();
-});
-
-ipcMain.handle('api:getLabelManifest', async () => {
-  return await mockApi.getLabelManifest();
-});
-
-ipcMain.handle('api:listPlaces', async () => {
-  return await mockApi.listPlaces();
-});
-
-ipcMain.handle('api:listScenes', async () => {
-  return await mockApi.listScenes();
-});
-
-ipcMain.handle('api:listPeople', async () => {
-  return await mockApi.listPeople();
-});
-
-ipcMain.handle('api:renamePerson', async (_event, id, name) => {
-  return await mockApi.renamePerson(id, name);
-});
-
-ipcMain.handle('api:listFolders', async () => {
-  return await mockApi.listFolders();
-});
-
-ipcMain.handle('api:pickAndAddFolder', async () => {
-  if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory'],
-    title: 'Select Media Folder to Index',
-  });
-  if (result.canceled || result.filePaths.length === 0) return null;
-
-  return await mockApi.pickAndAddFolder();
-});
-
-ipcMain.handle('api:rescanFolder', async (_event, id) => {
-  return await mockApi.rescanFolder(id);
-});
-
-ipcMain.handle('api:revealInFinder', async (_event, id) => {
-  const folders = await mockApi.listFolders();
-  const folder = folders.find((f) => f.id === id);
-  if (folder) {
-    shell.showItemInFolder(folder.path);
-  }
-});
-
-ipcMain.handle('api:stageQueryImage', async (_event, input) => {
-  return await mockApi.stageQueryImage(input);
-});
-
-// AI Chat streaming over IPC
-ipcMain.handle('api:chat:start', async (event, req) => {
-  const channel = `chat-stream-${Date.now()}`;
-  const cancel = mockApi.chat(req, (streamEvent) => {
-    if (!event.sender.isDestroyed()) {
-      event.sender.send(channel, streamEvent);
-    }
-  });
-
-  // Store cancel listener
-  ipcMain.once(`chat:cancel:${channel}`, () => {
-    cancel();
-  });
-
-  return { streamChannel: channel };
-});
 
 // Shelf IPC Handlers
 ipcMain.handle('shelf:open', () => {

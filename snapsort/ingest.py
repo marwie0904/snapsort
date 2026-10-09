@@ -177,7 +177,7 @@ def extract_frames(video: Path, out: Path) -> list[Path]:
          "-start_number", "0", str(out / "%06d.jpg")],
         capture_output=True, text=True,
     )
-    files = sorted(out.glob("*.jpg"))
+    files = sorted(out.glob("[0-9]*.jpg"))  # not the ._*.jpg AppleDouble files macOS adds on exFAT/FAT
     if proc.returncode or not files:
         shutil.rmtree(out, ignore_errors=True)
         lines = proc.stderr.strip().splitlines()

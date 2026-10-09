@@ -1,25 +1,46 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  BackendEvent,
   ChatStreamCallback,
-  LibrarySearch,
   SnapsortApi,
 } from '@snapsort/contract';
 
+/** Main returns errors as {__error: {code, message}}; rethrow them with their code. */
+async function invoke(channel: string, ...args: unknown[]): Promise<any> {
+  const r = await ipcRenderer.invoke(channel, ...args);
+  if (r && typeof r === 'object' && '__error' in r) {
+    throw Object.assign(new Error(r.__error.message), { code: r.__error.code });
+  }
+  return r;
+}
+
 const api: SnapsortApi = {
-  query: (req) => ipcRenderer.invoke('api:query', req),
-  getMedia: (id) => ipcRenderer.invoke('api:getMedia', id),
-  getDetections: (id, ts) => ipcRenderer.invoke('api:getDetections', id, ts),
-  getCounts: () => ipcRenderer.invoke('api:getCounts'),
-  getLabelManifest: () => ipcRenderer.invoke('api:getLabelManifest'),
-  listPlaces: () => ipcRenderer.invoke('api:listPlaces'),
-  listScenes: () => ipcRenderer.invoke('api:listScenes'),
-  listPeople: () => ipcRenderer.invoke('api:listPeople'),
-  renamePerson: (id, name) => ipcRenderer.invoke('api:renamePerson', id, name),
-  listFolders: () => ipcRenderer.invoke('api:listFolders'),
-  pickAndAddFolder: () => ipcRenderer.invoke('api:pickAndAddFolder'),
-  rescanFolder: (id) => ipcRenderer.invoke('api:rescanFolder', id),
-  revealInFinder: (id) => ipcRenderer.invoke('api:revealInFinder', id),
-  stageQueryImage: (input) => ipcRenderer.invoke('api:stageQueryImage', input),
+  query: (req) => invoke('api:query', req),
+  getMedia: (id) => invoke('api:getMedia', id),
+  getDetections: (id, ts) => invoke('api:getDetections', id, ts),
+  getCounts: () => invoke('api:getCounts'),
+  getLabelManifest: () => invoke('api:getLabelManifest'),
+  listPlaces: () => invoke('api:listPlaces'),
+  listScenes: () => invoke('api:listScenes'),
+  listPeople: () => invoke('api:listPeople'),
+  renamePerson: (id, name) => invoke('api:renamePerson', id, name),
+  listLibraries: () => invoke('api:listLibraries'),
+  listFolders: () => invoke('api:listFolders'),
+  pickAndAddFolder: () => invoke('api:pickAndAddFolder'),
+  rescanFolder: (id) => invoke('api:rescanFolder', id),
+  getIngestJobs: () => invoke('api:getIngestJobs'),
+  cancelIngest: (jobId) => invoke('api:cancelIngest', jobId),
+  ejectDrive: (libraryId) => invoke('api:ejectDrive', libraryId),
+  revealInFinder: (id) => invoke('api:revealInFinder', id),
+  openMedia: (id) => invoke('api:openMedia', id),
+  stageQueryImage: (input) => invoke('api:stageQueryImage', input),
+  onBackendEvent: (callback) => {
+    const handler = (_event: unknown, e: BackendEvent) => callback(e);
+    ipcRenderer.on('backend:event', handler);
+    return () => {
+      ipcRenderer.removeListener('backend:event', handler);
+    };
+  },
 
   chat: (req, onEvent: ChatStreamCallback) => {
     let cancelFn: () => void = () => {};

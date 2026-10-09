@@ -58,7 +58,7 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
     const list: Array<{ ts: number; personId: number; name: string }> = [];
     people.forEach((p) => {
       (p.timestamps || []).forEach((ts) => {
-        list.push({ ts, personId: p.id, name: p.name || `Person ${p.id}` });
+        list.push({ ts, personId: p.id, name: p.name || 'Unnamed person' });
       });
     });
     return list;
@@ -89,7 +89,7 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
     if (hoveredTs === null) return null;
     const activePeople = people
       .filter((p) => p.timestamps?.some((t) => Math.abs(t - hoveredTs) <= 1))
-      .map((p) => p.name || `Person ${p.id}`);
+      .map((p) => p.name || 'Unnamed person');
     const activeObjects = labels
       .filter((l) => l.timestamps?.some((t) => Math.abs(t - hoveredTs) <= 1))
       .map((l) => l.name || l.labelId);

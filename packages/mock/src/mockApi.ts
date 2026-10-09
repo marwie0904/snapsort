@@ -2,8 +2,9 @@ import {
   ChatStreamCallback,
   Detections,
   Folder,
-  IngestResult,
+  IngestJob,
   LabelManifest,
+  Library,
   LibrarySearch,
   MediaDetail,
   MediaSummary,
@@ -19,7 +20,9 @@ import {
 } from '@snapsort/contract';
 import {
   mockCounts,
+  mockExternalDrive,
   mockFolders,
+  mockLocalFolders,
   mockLabelManifest,
   mockMediaList,
   mockPeople,
@@ -314,23 +317,35 @@ export class MockSnapsortApi implements SnapsortApi {
     if (p) p.name = name;
   }
 
-  async pickAndAddFolder(): Promise<{ folder: Folder; result: IngestResult } | null> {
-    const newId = this.folders.length + 1;
-    const newFolder: Folder = {
-      id: newId,
-      name: `Folder ${newId}`,
-      path: `/Users/mac/Media/Folder_${newId}`,
-    };
-    this.folders.push(newFolder);
-    return {
-      folder: newFolder,
-      result: { newFiles: 24, processedModules: ['people', 'objects', 'places'] },
-    };
+  async listLibraries(): Promise<Library[]> {
+    const node = (f: Folder) => ({ id: f.id, name: f.name, path: f.path, count: 0, children: [] });
+    return [
+      { id: 'internal', name: 'This Mac', root: '/', isExternal: false, totalBytes: 0, freeBytes: 0,
+        folders: mockLocalFolders.map(node) },
+      { id: mockExternalDrive.id, name: mockExternalDrive.name, root: '/Volumes/SanDisk_1TB', isExternal: true,
+        totalBytes: 1e12, freeBytes: 5.18e11, folders: mockExternalDrive.folders.map(node) },
+    ];
   }
 
-  async rescanFolder(id: number): Promise<IngestResult> {
-    return { newFiles: 5, processedModules: ['people', 'objects', 'places'] };
+  async pickAndAddFolder(): Promise<{ jobId: number } | null> {
+    const newId = this.folders.length + 1;
+    this.folders.push({ id: newId, name: `Folder ${newId}`, path: `/Users/mac/Media/Folder_${newId}` });
+    return { jobId: newId };
   }
+
+  async rescanFolder(id: number): Promise<{ jobId: number }> {
+    return { jobId: id };
+  }
+
+  async getIngestJobs(): Promise<IngestJob[]> {
+    return [];
+  }
+
+  async cancelIngest(_jobId: number): Promise<void> {}
+
+  async ejectDrive(_libraryId: string): Promise<void> {}
+
+  async openMedia(_id: number): Promise<void> {}
 
   async listFolders(): Promise<Folder[]> {
     return this.folders;

@@ -22,6 +22,20 @@ interface MediaDetailsInspectorProps {
   onTabChange: (tab: 'categorized' | 'timeline') => void;
 }
 
+function formatBytes(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(n / 1e3))} KB`;
+}
+
+/** "2026-10-09 14:03:00" as "Oct 9, 2026, 2:03 PM". Capture times are local; added-at times are UTC. */
+function formatWhen(when: string, utc = false): string {
+  const d = new Date(when.replace(' ', 'T') + (utc ? 'Z' : ''));
+  return Number.isNaN(d.getTime())
+    ? when
+    : d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
@@ -101,7 +115,7 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
                 : 'bg-sky-500/15 text-sky-700 dark:text-[#38BDF8] dark:bg-[#38BDF8]/15 border border-sky-500/30 dark:border-[#38BDF8]/30'
             }`}
           >
-            {isVideo ? '4K Video' : 'Photo'}
+            {isVideo ? (media.codec ? media.codec.toUpperCase() : 'Video') : 'Photo'}
           </span>
         </div>
 
@@ -114,20 +128,31 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
             </div>
           )}
 
-          <div className="flex items-center gap-1.5 truncate">
+          <div className="flex items-center gap-1.5 truncate col-span-2" title={media.folderPath}>
             <FolderIcon size={12} className="text-[var(--text-muted)] shrink-0" />
-            <span className="truncate">Folder #{media.folderId}</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 truncate">
-            <Calendar size={12} className="text-[var(--text-muted)] shrink-0" />
             <span className="truncate">
-              {new Date(media.addedAt).toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-              })}
+              {media.libraryName ? `${media.libraryName} · ` : ''}
+              {media.folderPath ?? ''}
             </span>
           </div>
+
+          <div
+            className="flex items-center gap-1.5 truncate col-span-2"
+            title={media.capturedAt ? 'Captured' : 'Added to snapsort'}
+          >
+            <Calendar size={12} className="text-[var(--text-muted)] shrink-0" />
+            <span className="truncate">
+              {media.capturedAt ? formatWhen(media.capturedAt) : `Added ${formatWhen(media.addedAt, true)}`}
+            </span>
+          </div>
+
+          {(media.camera || media.sizeBytes || media.fps) && (
+            <div className="truncate col-span-2 font-mono">
+              {[media.camera, media.fps ? `${Math.round(media.fps)} fps` : null, media.sizeBytes ? formatBytes(media.sizeBytes) : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          )}
         </div>
       </div>
 
@@ -195,10 +220,7 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium text-[var(--text)]">
-                            {person.name || `Unnamed Face #${person.id}`}
-                          </span>
-                          <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                            ID: {person.id}
+                            {person.name || 'Unnamed person'}
                           </span>
                         </div>
 

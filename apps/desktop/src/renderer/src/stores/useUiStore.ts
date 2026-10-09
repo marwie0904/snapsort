@@ -78,7 +78,7 @@ interface UiState {
   inspectorTab: 'categorized' | 'timeline';
   customPeopleNames: Record<number, string>;
 
-  openMediaDetail: (id: number) => void;
+  openMediaDetail: (id: number, ts?: number) => void;
   closeMediaDetail: () => void;
   seekToTimestamp: (ts: number) => void;
   togglePlayPause: () => void;
@@ -152,26 +152,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   scope: 'all',
   q: '',
   similarTo: null,
-  // Default to Groom + Bride active filter matching reference screenshot
-  filters: [
-    { kind: 'person', ids: [1, 2], match: 'all', source: 'ai' },
-  ],
-  quickActions: [
-    {
-      id: 'qa-default-1',
-      name: 'Groom + Bride',
-      filters: [
-        { kind: 'person', ids: [1, 2], match: 'all', source: 'ai' },
-      ],
-      scope: 'all',
-      view: 'highlight',
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  activeQuickActionId: 'qa-default-1',
+  filters: [],
+  quickActions: [],
+  activeQuickActionId: null,
   sort: 'newest',
-  view: 'highlight', // Default to highlight mode to match reference screenshot!
-  aiPanelOpen: typeof window !== 'undefined' ? window.innerWidth >= 1200 : true,
+  view: 'filter',
+  aiPanelOpen: false, // the assistant is a local demo until the chat backend lands
 
   currentView: 'library',
   selectedPersonId: null,
@@ -183,11 +169,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   inspectorTab: 'categorized',
   customPeopleNames: {},
 
-  openMediaDetail: (id: number) =>
+  openMediaDetail: (id: number, ts?: number) =>
     set({
       currentView: 'media-detail',
       selectedMediaId: id,
-      currentMediaTimestamp: 0,
+      currentMediaTimestamp: ts ?? 0,
       isPlaying: false,
       hoveredEntityId: null,
     }),
@@ -519,8 +505,17 @@ export const useUiStore = create<UiState>((set, get) => ({
       selectedFolderDrive: null,
       filters: state.filters.filter((f) => f.kind !== 'folder'),
     })),
-  setQ: (q) => set({ q }),
-  setSimilarTo: (similarTo) => set((state) => ({ similarTo, sort: similarTo ? 'similarity' : state.sort })),
+  // Text search ranks by relevance; clearing it goes back to newest
+  setQ: (q) =>
+    set((state) => ({
+      q,
+      sort: q.trim() ? (state.sort === 'newest' ? 'relevance' : state.sort) : state.sort === 'relevance' ? 'newest' : state.sort,
+    })),
+  setSimilarTo: (similarTo) =>
+    set((state) => ({
+      similarTo,
+      sort: similarTo ? 'similarity' : state.sort === 'similarity' ? 'newest' : state.sort,
+    })),
   setSort: (sort) => set({ sort }),
   setView: (view) => set({ view }),
   toggleAiPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),

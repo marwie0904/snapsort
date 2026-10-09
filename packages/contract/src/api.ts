@@ -16,11 +16,15 @@ export const MediaSummarySchema = z.object({
   name: z.string(),
   folderId: z.number().int(),
   addedAt: z.string(),
+  /** Local capture time "YYYY-MM-DD HH:MM:SS", when the file has one. */
+  capturedAt: z.string().optional(),
   durationS: z.number().optional(),
   faceCount: z.number().int().default(0),
   score: z.number().optional(),
   matches: z.array(FrameMatchSchema).optional(),
   bestFrameTs: z.number().optional(),
+  /** Highlight view: whether the item passes the filters. Filter view returns matches only. */
+  matched: z.boolean().optional(),
 });
 export type MediaSummary = z.infer<typeof MediaSummarySchema>;
 
@@ -94,8 +98,50 @@ export const MediaDetailSchema = MediaSummarySchema.extend({
   ),
   tags: z.array(MediaTagSchema).optional(),
   frames: z.array(z.number()).optional(),
+  folderPath: z.string().optional(),
+  libraryName: z.string().optional(),
+  camera: z.string().optional(),
+  sizeBytes: z.number().int().optional(),
+  codec: z.string().optional(),
+  fps: z.number().optional(),
 });
 export type MediaDetail = z.infer<typeof MediaDetailSchema>;
+
+/** A folder under an added folder. `id` filters the library to it and its subfolders. */
+export interface FolderNode {
+  id: number;
+  name: string;
+  path: string;
+  count: number;
+  children: FolderNode[];
+}
+
+/** A library: the internal one, or a mounted drive with a snapsort/ folder. */
+export interface Library {
+  id: string;
+  name: string;
+  root: string;
+  isExternal: boolean;
+  totalBytes: number;
+  freeBytes: number;
+  folders: FolderNode[];
+}
+
+export interface IngestJob {
+  id: number;
+  folderPath: string;
+  libraryName: string;
+  state: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+  /** starting: models loading, before the first file. */
+  phase?: 'starting' | 'files' | 'grouping';
+  done: number;
+  total: number;
+  error?: { code: string; message: string };
+}
+
+export type BackendEvent =
+  | { type: 'ingest'; job: IngestJob }
+  | { type: 'libraries' };
 
 export const PersonSchema = z.object({
   id: z.number().int(),
@@ -252,10 +298,18 @@ export interface SnapsortApi {
   renamePerson(id: number, name: string): Promise<void>;
 
   // folders (ingest)
-  pickAndAddFolder(): Promise<{ folder: Folder; result: IngestResult } | null>;
-  rescanFolder(id: number): Promise<IngestResult>;
+  listLibraries(): Promise<Library[]>;
+  /** Opens the folder picker and queues an ingest. Null when the picker is cancelled. */
+  pickAndAddFolder(): Promise<{ jobId: number } | null>;
+  rescanFolder(id: number): Promise<{ jobId: number }>;
+  getIngestJobs(): Promise<IngestJob[]>;
+  cancelIngest(jobId: number): Promise<void>;
+  ejectDrive(libraryId: string): Promise<void>;
   listFolders(): Promise<Folder[]>;
   revealInFinder(id: number): Promise<void>;
+  /** Opens a media file in its default app (QuickTime for video). */
+  openMedia(id: number): Promise<void>;
+  onBackendEvent?(callback: (event: BackendEvent) => void): () => void;
 
   // AI
   chat(

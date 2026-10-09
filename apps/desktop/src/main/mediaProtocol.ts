@@ -60,13 +60,29 @@ export async function serveFile(filePath: string, range: string | null): Promise
   return new Response(body(start, end), { status: 206, headers });
 }
 
-export function registerMediaProtocol(): void {
+/** Maps snapsort-media://<kind>/<id>[/<ts>] to a file. Null = not found. */
+export type MediaResolver = (kind: string, id: number, ts: number | undefined) => Promise<string | null>;
+
+/** With a resolver, every URL is an id and goes through it. Without one (mock backend), file URLs are
+ * raw paths and everything else is a placeholder. */
+export function registerMediaProtocol(resolver?: MediaResolver): void {
   protocol.handle('snapsort-media', async (request) => {
     const url = new URL(request.url);
-    const host = url.host; // 'preview', 'frame', 'file'
+    const host = url.host; // 'preview', 'frame', 'file', 'display', 'face'
     const pathname = decodeURIComponent(url.pathname);
 
-    // ponytail: raw absolute paths until Phase 4 switches to library IDs
+    if (resolver) {
+      const [id, ts] = pathname.split('/').filter(Boolean).map(Number);
+      if (!Number.isSafeInteger(id)) return new Response(null, { status: 400 });
+      let path: string | null = null;
+      try {
+        path = await resolver(host, id, Number.isFinite(ts) ? ts : undefined);
+      } catch (err) {
+        console.error(`[media] ${request.url}:`, (err as Error).message);
+      }
+      return path ? serveFile(path, request.headers.get('Range')) : new Response(null, { status: 404 });
+    }
+
     if (host === 'file') {
       return serveFile(pathname, request.headers.get('Range'));
     }

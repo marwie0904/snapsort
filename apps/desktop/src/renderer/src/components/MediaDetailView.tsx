@@ -11,7 +11,7 @@ import {
   Check,
   Layers,
 } from 'lucide-react';
-import type { MediaSummary } from '@snapsort/contract';
+import type { MediaSummary, SnapsortApi } from '@snapsort/contract';
 import { MockSnapsortApi } from '@snapsort/mock';
 import { useUiStore } from '../stores/useUiStore';
 import { useShelfStore } from '../stores/useShelfStore';
@@ -22,7 +22,7 @@ import { MediaFilmstrip } from './MediaFilmstrip';
 
 const mockApiFallback = new MockSnapsortApi();
 
-function getApi() {
+function getApi(): SnapsortApi {
   if (typeof window !== 'undefined' && window.snapsort) {
     return window.snapsort;
   }
@@ -58,9 +58,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
   const inShelf = selectedMediaId !== null && shelfItems.some((s) => s.id === selectedMediaId);
 
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+  const [videoFailed, setVideoFailed] = useState(false);
+  useEffect(() => setVideoFailed(false), [selectedMediaId]);
+  // Boxes exist per 1 fps frame, so fetch them per whole second
+  const detectionTs = Math.floor(currentMediaTimestamp);
 
   // 1. Fetch Media Details
-  const { data: media, isLoading: isLoadingMedia } = useQuery({
+  const { data: media, isLoading: isLoadingMedia, error: mediaError } = useQuery({
     queryKey: ['mediaDetail', selectedMediaId],
     queryFn: () => (selectedMediaId ? api.getMedia(selectedMediaId) : Promise.reject('No ID')),
     enabled: selectedMediaId !== null,
@@ -68,17 +72,17 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
 
   // 2. Fetch Detections at current timestamp
   const { data: detections, isLoading: isLoadingDetections } = useQuery({
-    queryKey: ['mediaDetections', selectedMediaId, currentMediaTimestamp],
+    queryKey: ['mediaDetections', selectedMediaId, detectionTs],
     queryFn: () =>
       selectedMediaId
-        ? api.getDetections(selectedMediaId, currentMediaTimestamp)
+        ? api.getDetections(selectedMediaId, detectionTs)
         : Promise.reject('No ID'),
     enabled: selectedMediaId !== null && showDetections,
   });
 
-  // 3. Simulated Video Playback Engine
+  // 3. Frame-stepping playback, for videos the <video> element can't decode
   useEffect(() => {
-    if (!isPlaying || !media || media.kind !== 'video') return;
+    if (!isPlaying || !media || media.kind !== 'video' || !videoFailed) return;
 
     const duration = media.durationS || 10;
     const intervalMs = 1000 / playbackSpeed;
@@ -90,7 +94,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
     }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [isPlaying, media, currentMediaTimestamp, playbackSpeed, seekToTimestamp]);
+  }, [isPlaying, media, currentMediaTimestamp, playbackSpeed, seekToTimestamp, videoFailed]);
 
   // 4. Keyboard Shortcuts: Esc to exit, Arrows to navigate, Space to toggle playback
   useEffect(() => {
@@ -119,6 +123,21 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [closeMediaDetail, nextMedia, prevMedia, items, togglePlayPause, media]);
+
+  if (mediaError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-xs text-[var(--text-muted)]">
+        <span>{(mediaError as Error).message}</span>
+        <button
+          type="button"
+          onClick={closeMediaDetail}
+          className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text)] hover:bg-[var(--surface-2)]"
+        >
+          Back to footage
+        </button>
+      </div>
+    );
+  }
 
   if (!selectedMediaId || isLoadingMedia || !media) {
     return (
@@ -237,6 +256,12 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
               currentTimestamp={currentMediaTimestamp}
               isPlaying={isPlaying}
               onTogglePlay={togglePlayPause}
+              onTimeUpdate={seekToTimestamp}
+              onPlayingChange={setIsPlaying}
+              videoFailed={videoFailed}
+              onVideoFailed={() => setVideoFailed(true)}
+              onOpenExternally={() => api.openMedia(media.id).catch((err) => console.error(err))}
+              playbackRate={playbackSpeed}
             />
           </div>
 

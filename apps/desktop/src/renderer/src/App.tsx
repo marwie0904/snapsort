@@ -1,5 +1,6 @@
-import React, { useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { IngestJob, SnapsortApi } from '@snapsort/contract';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { ScopeHeader } from './components/ScopeHeader';
@@ -21,15 +22,18 @@ import { MockSnapsortApi } from '@snapsort/mock';
 // Fallback in-memory mock if not inside Electron contextBridge
 const mockApiFallback = new MockSnapsortApi();
 
-function getApi() {
+function getApi(): SnapsortApi {
   if (typeof window !== 'undefined' && window.snapsort) {
     return window.snapsort;
   }
   return mockApiFallback;
 }
 
+const PAGE = 120;
+
 export const App: React.FC = () => {
   const api = useMemo(() => getApi(), []);
+  const queryClient = useQueryClient();
   const {
     getSearchQuery,
     view,
@@ -40,6 +44,8 @@ export const App: React.FC = () => {
     selectedMediaId,
     openMediaDetail,
     initThemeListener,
+    clearSelectedFolder,
+    closeMediaDetail,
   } = useUiStore();
   const searchQuery = getSearchQuery();
 
@@ -69,25 +75,82 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Backend events: ingest progress goes to the jobs list, and new data or a drive change refreshes everything.
+  // While a folder is processing, its files show up every few seconds.
+  useEffect(() => {
+    let last = 0;
+    return api.onBackendEvent?.((e) => {
+      if (e.type === 'libraries') {
+        queryClient.invalidateQueries();
+        return;
+      }
+      queryClient.setQueryData<IngestJob[]>(['jobs'], (old = []) =>
+        old.some((j) => j.id === e.job.id) ? old.map((j) => (j.id === e.job.id ? e.job : j)) : [...old, e.job]
+      );
+      const finished = e.job.state !== 'running' && e.job.state !== 'queued';
+      if (finished || Date.now() - last > 5000) {
+        last = Date.now();
+        queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'jobs' });
+      }
+    });
+  }, [api, queryClient]);
+
   // Fetch Sidebar Counts
   const { data: counts } = useQuery({
     queryKey: ['counts'],
     queryFn: () => api.getCounts(),
   });
 
-  // Fetch Media Items based on search & filters
-  const { data: queryResult, isLoading } = useQuery({
+  // Fetch Media Items based on search & filters, a page at a time
+  const {
+    data: pages,
+    isLoading,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['query', searchQuery],
-    queryFn: () => api.query({ search: searchQuery, limit: 60 }),
+    queryFn: ({ pageParam }) => api.query({ search: searchQuery, cursor: pageParam, limit: PAGE }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    placeholderData: (prev) => prev,
   });
+  const queryResult = pages?.pages[0];
+  const items = useMemo(() => pages?.pages.flatMap((p) => p.items) ?? [], [pages]);
+  const total = queryResult?.total ?? 0;
+  const clipsCount = queryResult?.facets?.videos ?? 0;
+  const photosCount = queryResult?.facets?.images ?? 0;
+  const errorCode = (error as { code?: string } | null)?.code;
 
-  const items = queryResult?.items || [];
-  const total = queryResult?.total ?? (counts?.all ?? 248);
-  const clipsCount = queryResult?.facets?.videos ?? (counts?.videos ?? 66);
-  const photosCount = queryResult?.facets?.images ?? (counts?.images ?? 182);
+  // A drive that went away takes its folder selection and open file with it
+  useEffect(() => {
+    if (errorCode === 'LIBRARY_GONE') {
+      clearSelectedFolder();
+      closeMediaDetail();
+    }
+  }, [errorCode, clearSelectedFolder, closeMediaDetail]);
 
+  // Load the next page when the end of the grid scrolls into view
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !hasNextPage) return;
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !isFetchingNextPage) fetchNextPage();
+    }, { rootMargin: '600px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, items.length]);
+
+  const [notice, setNotice] = useState<string | null>(null);
   const handleAddFolder = async () => {
-    await api.pickAndAddFolder();
+    try {
+      await api.pickAndAddFolder();
+    } catch (err) {
+      setNotice((err as Error).message);
+    }
   };
 
   return (
@@ -101,6 +164,16 @@ export const App: React.FC = () => {
         <div className={`app-drag shrink-0 pb-2 ${sidebarOpen ? 'pt-6' : 'pt-7'}`}>
           <TopBar />
         </div>
+
+        {notice && (
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="shrink-0 mb-2 text-left bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] text-xs px-3 py-2 rounded-lg font-medium"
+          >
+            {notice}
+          </button>
+        )}
 
         {/* View Switcher: People View vs Scenes View vs Tags View vs Person Detail vs Media Detail vs Media Library */}
         {currentView === 'people' ? (
@@ -145,12 +218,50 @@ export const App: React.FC = () => {
                 <div className="h-64 flex items-center justify-center text-xs text-[var(--text-muted)]">
                   Loading footage...
                 </div>
+              ) : error && items.length === 0 ? (
+                <div className="h-64 flex flex-col items-center justify-center gap-3 text-xs text-[var(--text-muted)] text-center">
+                  <span className="max-w-md">
+                    {errorCode === 'SIDECAR_DOWN' || errorCode === 'SIDECAR_TIMEOUT'
+                      ? `Backend unavailable: ${(error as Error).message}`
+                      : (error as Error).message}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => refetch()}
+                    className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text)] hover:bg-[var(--surface-2)]"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : items.length === 0 ? (
+                <div className="h-64 flex flex-col items-center justify-center gap-3 text-xs text-[var(--text-muted)]">
+                  {(counts?.all ?? 0) === 0 ? (
+                    <>
+                      <span>No footage yet. Add a folder from this Mac or an external drive.</span>
+                      <button
+                        type="button"
+                        onClick={handleAddFolder}
+                        className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--accent-ink)] font-semibold"
+                      >
+                        + Add folder
+                      </button>
+                    </>
+                  ) : (
+                    <span>Nothing matches these filters.</span>
+                  )}
+                </div>
               ) : (
-                <MediaGrid
-                  items={items}
-                  viewMode={view}
-                  onItemClick={openMediaDetail}
-                />
+                <>
+                  <MediaGrid
+                    items={items}
+                    viewMode={view}
+                    onItemClick={(id) => {
+                      const item = items.find((i) => i.id === id);
+                      openMediaDetail(id, item?.matches?.length ? item.bestFrameTs : undefined);
+                    }}
+                  />
+                  <div ref={sentinel} className="h-8" />
+                </>
               )}
             </div>
           </>
@@ -160,7 +271,7 @@ export const App: React.FC = () => {
       {/* 3. Right Ask AI Panel */}
       {aiPanelOpen && (
         <AskAiPanel
-          currentMatchedCount={queryResult?.matched ?? queryResult?.total ?? 36}
+          currentMatchedCount={queryResult?.matched ?? queryResult?.total ?? 0}
         />
       )}
 
