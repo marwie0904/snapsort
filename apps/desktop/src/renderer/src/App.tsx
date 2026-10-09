@@ -47,7 +47,14 @@ export const App: React.FC = () => {
     clearSelectedFolder,
     closeMediaDetail,
   } = useUiStore();
-  const searchQuery = getSearchQuery();
+  // Typing runs a text search: wait for a 250 ms pause instead of searching on every key
+  const liveQuery = getSearchQuery();
+  const [searchQuery, setSearchQuery] = useState(liveQuery);
+  const liveKey = JSON.stringify(liveQuery);
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(JSON.parse(liveKey)), 250);
+    return () => clearTimeout(t);
+  }, [liveKey]);
 
   // Initialize OS theme change listener
   useEffect(() => {

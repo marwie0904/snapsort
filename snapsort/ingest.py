@@ -124,7 +124,7 @@ def validate(results: list[Result], frames: list[Frame]) -> list[Result]:
             if not isinstance(r.data, dict):
                 raise ContractError(f"data must be a dict, got {type(r.data).__name__}")
             try:
-                json.dumps(r.data)
+                json.dumps(r.data, allow_nan=False)  # NaN isn't JSON: the app's reader would fail on it
             except (TypeError, ValueError) as e:
                 raise ContractError(f"data is not JSON-serializable: {e}") from e
         score = None if r.score is None else float(r.score)
@@ -426,7 +426,7 @@ def _write(conn, media_id: int, frame_ids: dict[int, int], module: Module,
                 [(frame_ids[r.frame_idx], module.name, r.label, r.score,
                   None if r.bbox is None else json.dumps(r.bbox),
                   None if r.vector is None else r.vector.tobytes(),
-                  None if r.data is None else json.dumps(r.data)) for r in results])
+                  None if r.data is None else json.dumps(r.data, allow_nan=False)) for r in results])
         conn.execute(
             "INSERT OR REPLACE INTO runs (media_id, module, version, status, error) "
             "VALUES (?, ?, ?, ?, ?)",

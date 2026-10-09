@@ -36,6 +36,7 @@ def test_empty_output_is_valid():
     (Result(0, vector=np.array([np.nan])), "vector"),
     (Result(0, data=[1]), "data"),
     (Result(0, data={"x": object()}), "data"),
+    (Result(0, data={"x": float("nan")}), "data"),
 ])
 def test_rejects_contract_violations(bad, match):
     with pytest.raises(ContractError, match=match):
