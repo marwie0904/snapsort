@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 from PIL import ExifTags, Image, TiffImagePlugin
 
-from snapsort.modules.location import gps_from_exif, gps_from_iso6709, place_for, read_gps
+from snapsort.contract import Frame
+from snapsort.ingest import connect, run_ingest, validate
+from snapsort.modules.location import (
+    Location, gps_from_exif, gps_from_iso6709, place_for, read_gps,
+)
 
 SYDNEY_EXIF = {1: "S", 2: (33.0, 51.0, 24.48), 3: "E", 4: (151.0, 12.0, 55.08)}  # Opera House
 VIDEO_META = {
@@ -118,3 +122,74 @@ def test_no_place_far_from_land():
 def test_import_does_not_load_geocoder():
     code = "import sys, snapsort.modules.location; assert 'reverse_geocode' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+# --- Module ---
+
+def frames_for(path: Path, kind: str, idxs=(0,)) -> list[Frame]:
+    return [Frame(1, str(path), kind, i, None if kind == "image" else float(i), Image.new("RGB", (8, 8)))
+            for i in idxs]
+
+
+@pytest.fixture(scope="module")
+def location() -> Location:
+    module = Location()
+    module.setup()
+    return module
+
+
+def test_output_passes_contract(location, sample_frames):
+    assert validate(location.process(sample_frames), sample_frames) == []
+
+
+@pytest.mark.parametrize("name, kind, lat, lon, cc", TAGGED)
+def test_one_result_per_tagged_file(location, tmp_path, name, kind, lat, lon, cc):
+    frames = frames_for(write_tagged(tmp_path, name), kind)
+    [r] = validate(location.process(frames), frames)
+    assert r.frame_idx == 0
+    assert (r.data["lat"], r.data["lon"]) == pytest.approx((lat, lon), abs=1e-4)
+    assert r.data["country_code"] == cc
+    assert r.label == r.data["place"].lower()
+
+
+def test_result_shape(location, tmp_path):
+    frames = frames_for(write_tagged(tmp_path, "sydney.jpg"), "image")
+    [r] = validate(location.process(frames), frames)
+    assert list(r.data) == ["lat", "lon", "place", "city", "state", "country", "country_code"]
+    assert r.data["state"] == "New South Wales"
+    assert (r.score, r.bbox, r.vector) == (None, None, None)
+
+
+def test_coordinates_without_place_far_from_land(location, tmp_path):
+    path = write_image(tmp_path / "ocean.jpg", {1: "N", 2: (0, 0, 0), 3: "W", 4: (160, 0, 0)})
+    frames = frames_for(path, "image")
+    [r] = validate(location.process(frames), frames)
+    assert r.label is None
+    assert r.data == {"lat": 0.0, "lon": -160.0, "place": None, "city": None,
+                      "state": None, "country": None, "country_code": None}
+
+
+def test_no_result_without_gps(location, tmp_path):
+    frames = (frames_for(write_image(tmp_path / "plain.jpg"), "image")
+              + frames_for(write_video(tmp_path / "plain.mp4"), "video"))
+    assert location.process(frames) == []
+
+
+def test_only_frame_zero_is_read(location, tmp_path):
+    path = write_tagged(tmp_path, "paris trip.mp4")
+    first = frames_for(path, "video", range(4))
+    assert [r.frame_idx for r in validate(location.process(first), first)] == [0]
+    assert location.process(frames_for(path, "video", range(16, 20))) == []
+
+
+def test_ingest_stores_one_row_on_frame_zero(tmp_path, data_dir):
+    path = write_tagged(tmp_path, "paris trip.mp4", seconds=20)  # 20 frames = two batches
+    assert run_ingest([path], [Location()], data_dir)
+    conn = connect(data_dir / "snapsort.db")
+    rows = conn.execute(
+        "SELECT f.idx, r.label, json_extract(r.data, '$.country_code') FROM results r "
+        "JOIN frames f ON f.id = r.frame_id WHERE r.module = 'location'"
+    ).fetchall()
+    assert len(rows) == 1 and rows[0][0] == 0 and rows[0][2] == "FR"
+    assert conn.execute("SELECT status FROM runs WHERE module = 'location'").fetchall() == [("done",)]
+    assert conn.execute("SELECT count(*) FROM frames").fetchone() == (20,)

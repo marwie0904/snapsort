@@ -10,11 +10,14 @@ import subprocess
 import pillow_heif
 from PIL import ExifTags, Image
 
+from snapsort.contract import Frame, Module, Result
+
 pillow_heif.register_heif_opener()
 
 VIDEO_TAGS = ("com.apple.quicktime.location.ISO6709", "location", "location-eng")
 ISO6709 = re.compile(r"^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)")
 MAX_PLACE_KM = 50
+NO_PLACE = dict.fromkeys(("place", "city", "state", "country", "country_code"))
 
 
 def gps_from_exif(gps: dict) -> tuple[float, float] | None:
@@ -84,3 +87,23 @@ def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = (math.sin((p2 - p1) / 2) ** 2
          + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2)
     return 2 * 6371 * math.asin(math.sqrt(a))
+
+
+class Location(Module):
+    name = "location"
+    version = "1"
+
+    def setup(self) -> None:
+        place_for(0.0, 0.0)  # loads the GeoNames index (~4 s)
+
+    def process(self, frames: list[Frame]) -> list[Result]:
+        results = []
+        for f in frames:
+            if f.idx != 0:
+                continue
+            gps = read_gps(f.media_path, f.media_kind)
+            if gps is None:
+                continue
+            place = place_for(*gps) or NO_PLACE
+            results.append(Result(0, label=place["place"], data={"lat": gps[0], "lon": gps[1], **place}))
+        return results

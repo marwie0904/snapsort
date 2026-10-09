@@ -20,7 +20,8 @@ A chatbot with tool calling access to every filter above, so queries like "photo
 | Part | State |
 |---|---|
 | Ingest pipeline (CLI, frames, module runner, storage) | Done |
-| Feature modules (embeddings, people, objects, location) | Not started; `example` module is the template |
+| Location module (GPS + offline place names) | Done |
+| Feature modules (embeddings, people, objects) | Not started; `example` module is the template |
 | Search, chatbot | Not started |
 
 ## Setup
@@ -76,3 +77,8 @@ uv run pytest tests/modules    # modules
 Every feature goes design → plan → build. Designs live in `docs/design/`, plans in `docs/plans/` under the same file name.
 
 - Ingest pipeline: [design](docs/design/2026-10-09-ingest-pipeline.md), [plan](docs/plans/2026-10-09-ingest-pipeline.md)
+- Location module: [design](docs/design/2026-10-09-location-module.md), [plan](docs/plans/2026-10-09-location-module.md)
+
+## Credits
+
+Place names from GeoNames (geonames.org), CC BY 4.0.
