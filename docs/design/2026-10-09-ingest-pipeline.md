@@ -86,6 +86,7 @@ snapsort ingest <path>... [--modules a,b]
 
 - Image: one frame, `idx = 0`, `ts = NULL`, `frames.path` = the original file. Nothing is copied.
 - Video: `ffmpeg -nostdin -v error -i <path> -vf fps=1 -q:v 2 -start_number 0 .snapsort/frames/<media_id>/%06d.jpg`. With `-start_number 0`, file number = `idx`, and `ts = idx` (seconds). Any existing frame dir for that media id is removed first. ffmpeg applies rotation metadata by default. Verified: a 3 s clip yields exactly 3 frames.
+- Keyframe-only decoding: if `ffprobe` packet flags show a keyframe at least every second in the first 30 s, ffmpeg runs with `-skip_frame nokey` before `-i` and `fps=1:eof_action=pass`. It decodes only keyframes instead of every frame. Measured on a DJI 4K60 HEVC clip with a keyframe every 0.5 s: about 6× faster extraction, and each frame lands exactly on its second. Videos with sparser keyframes keep the full decode. Known issue in the full decode: `fps=1` keeps the last frame of each rounding window, so frame `n` shows about `n + 0.5` s while `ts = n`.
 - The `media` row, extraction and `frames` rows happen in one transaction. If ffmpeg fails or yields 0 frames: roll back, delete the frame dir, skip the file with a warning.
 - Frames are kept on disk so new modules can run without re-decoding and search can display results.
 - `frames.path` is always absolute, so the DB can be read from any working directory.

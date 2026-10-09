@@ -1,9 +1,12 @@
+import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PIL import Image
 
-from snapsort.ingest import classify, connect, extract_frames, load_image, resolve_paths
+from snapsort.ingest import (classify, connect, dense_keyframes, extract_frames, load_image,
+                             resolve_paths)
 
 
 def test_classify_is_case_insensitive():
@@ -49,6 +52,34 @@ def test_extract_frames_replaces_stale_output(sample_video, tmp_path):
     out.mkdir()
     (out / "000099.jpg").write_bytes(b"stale")
     assert len(extract_frames(sample_video, out)) == 3
+
+
+def make_video(path, gop, duration=3.0):
+    """Clip whose hue turns 120° per second, encoded with a keyframe every `gop` frames (10 fps)."""
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "lavfi",
+                    "-i", f"color=c=red:size=64x64:rate=10:duration={duration}", "-vf", "hue=h=120*t",
+                    "-g", str(gop), str(path)], check=True)
+    return path
+
+
+def test_dense_keyframes(sample_video, tmp_path):
+    # Decoding only keyframes is safe only when every 1 fps sample can land on one.
+    assert dense_keyframes(make_video(tmp_path / "dense.mp4", gop=5))       # every 0.5 s
+    assert not dense_keyframes(make_video(tmp_path / "sparse.mp4", gop=20))  # every 2 s
+    assert not dense_keyframes(sample_video)                                  # x264 default
+
+
+def test_keyframe_extraction_samples_whole_seconds(tmp_path):
+    # 3.4 s: the last sample (t=3) must survive, which fps drops at EOF on keyframe-only input.
+    video = make_video(tmp_path / "dense.mp4", gop=5, duration=3.4)
+    files = extract_frames(video, tmp_path / "out")
+    assert len(files) == 4
+    for i, f in enumerate(files):
+        ref = tmp_path / f"ref{i}.png"   # full decode, exact seek to second i
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", str(i), "-i", str(video),
+                        "-frames:v", "1", str(ref)], check=True)
+        got, want = (np.asarray(load_image(p), float).mean(axis=(0, 1)) for p in (f, ref))
+        assert np.abs(got - want).max() < 10, (i, got, want)   # half a second off is a 60° hue shift
 
 
 def test_extract_frames_fails_cleanly_on_garbage(tmp_path):

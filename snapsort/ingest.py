@@ -168,13 +168,32 @@ def load_image(path: str | Path) -> Image.Image:
         return ImageOps.exif_transpose(im).convert("RGB")
 
 
+def dense_keyframes(video: Path) -> bool:
+    """True if the first 30 s have a keyframe at least every 1/FPS s (reads packet flags, no
+    decoding). Then decoding only keyframes still yields every sample, at a fraction of the cost:
+    DJI clips have one every 0.5 s. Sparse keyframes (x264's default allows 10 s) need a full decode."""
+    proc = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-read_intervals", "%+30",
+         "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", str(video)],
+        capture_output=True, text=True,
+    )
+    rows = [line.split(",") for line in proc.stdout.splitlines() if "," in line]
+    keys = sorted(float(r[0]) for r in rows if "K" in r[1] and r[0] != "N/A")
+    return len(keys) > 1 and max(b - a for a, b in zip(keys, keys[1:])) <= 1 / FPS + 0.01
+
+
 def extract_frames(video: Path, out: Path) -> list[Path]:
     """Write one JPEG per second of video to out/<idx:06d>.jpg (idx from 0). Returns them in order.
     Raises RuntimeError and leaves no out dir if ffmpeg fails or yields no frames."""
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
+    if dense_keyframes(video):
+        # On keyframe-only input, fps drops the last sample at EOF unless told to pass it through.
+        skip, vf = ["-skip_frame", "nokey"], f"fps={FPS}:eof_action=pass"
+    else:
+        skip, vf = [], f"fps={FPS}"
     proc = subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(video), "-vf", f"fps={FPS}", "-q:v", "2",
+        ["ffmpeg", "-nostdin", "-v", "error", *skip, "-i", str(video), "-vf", vf, "-q:v", "2",
          "-start_number", "0", str(out / "%06d.jpg")],
         capture_output=True, text=True,
     )
