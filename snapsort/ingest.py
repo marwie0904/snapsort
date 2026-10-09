@@ -172,3 +172,151 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
     return conn
+
+
+def run_ingest(paths: list[Path], modules: list[Module], data_dir: Path) -> bool:
+    """Process every file with every module that hasn't run on it at its current version.
+    Returns True if every file and module succeeded."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    conn = connect(data_dir / "snapsort.db")
+    active: list[Module] = list(modules)   # modules whose setup() fails are removed
+    ready: set[str] = set()                # modules whose setup() has run
+    dims: dict[str, int] = {}              # vector dim per module, fixed for the run
+    ok = True
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, len(modules))) as pool:
+            for path in resolve_paths(paths):
+                if not active:
+                    print("error: no modules left to run", file=sys.stderr)
+                    return False
+                ok &= _ingest_file(conn, pool, path, active, ready, dims, data_dir / "frames")
+    finally:
+        conn.close()
+    return ok
+
+
+def _ingest_file(conn, pool, path, active, ready, dims, frames_root) -> bool:
+    if not path.is_file():
+        return _skip(path, "not found")
+    kind = classify(path)
+    if kind is None:
+        return _skip(path, "unsupported file type")
+    row = conn.execute("SELECT id FROM media WHERE path = ?", (str(path),)).fetchone()
+    if row:
+        media_id = row[0]
+        pending = _pending(conn, media_id, active)
+        if not pending:
+            print(f"{path}  up to date")
+            return True
+    else:
+        pending = list(active)
+        try:
+            media_id = _register(conn, path, kind, frames_root)
+        except Exception as e:
+            return _skip(path, _msg(e))
+
+    frames = conn.execute(
+        "SELECT id, idx, ts, path FROM frames WHERE media_id = ? ORDER BY idx", (media_id,)
+    ).fetchall()
+    results: dict[str, list[Result]] = {m.name: [] for m in pending}
+    errors: dict[str, str] = {}
+    ok = True
+    for i in range(0, len(frames), BATCH):
+        try:
+            batch = [Frame(media_id, str(path), kind, idx, ts, load_image(fp))
+                     for _, idx, ts, fp in frames[i:i + BATCH]]
+        except Exception as e:
+            return _skip(path, f"cannot read frame: {_msg(e)}")
+        futures = {m: pool.submit(_call, m, batch, ready)
+                   for m in pending if m in active and m.name not in errors}
+        for m, fut in futures.items():
+            try:
+                out = validate(fut.result(), batch)
+                _check_dim(out, dims, m.name)
+                results[m.name] += out
+            except SetupError as e:
+                active.remove(m)
+                ok = False
+                print(f"warning: {m.name} setup failed, dropped for this run: {e}", file=sys.stderr)
+            except Exception as e:
+                errors[m.name] = _msg(e)
+
+    frame_ids = {idx: fid for fid, idx, _, _ in frames}
+    status = []
+    for m in pending:
+        if m not in active:
+            continue
+        err = errors.get(m.name)
+        _write(conn, media_id, frame_ids, m, results[m.name], err)
+        status.append(f"{m.name}:done" if err is None else f"{m.name}:error({err})")
+        ok = ok and err is None
+    print(f"{path}  {len(frames)} frames  {' '.join(status)}")
+    return ok
+
+
+def _pending(conn, media_id: int, modules: list[Module]) -> list[Module]:
+    done = dict(conn.execute(
+        "SELECT module, version FROM runs WHERE media_id = ? AND status = 'done'", (media_id,)
+    ).fetchall())
+    return [m for m in modules if done.get(m.name) != m.version]
+
+
+def _register(conn, path: Path, kind: str, frames_root: Path) -> int:
+    """Insert the media row and its frames in one transaction. Raises if extraction fails."""
+    with conn:
+        media_id = conn.execute(
+            "INSERT INTO media (path, kind) VALUES (?, ?)", (str(path), kind)
+        ).lastrowid
+        if kind == "image":
+            rows = [(media_id, 0, None, str(path))]
+        else:
+            files = extract_frames(path, frames_root / str(media_id))
+            rows = [(media_id, i, i / FPS, str(f)) for i, f in enumerate(files)]
+        conn.executemany("INSERT INTO frames (media_id, idx, ts, path) VALUES (?, ?, ?, ?)", rows)
+    return media_id
+
+
+def _call(module: Module, batch: list[Frame], ready: set[str]) -> list[Result]:
+    """Runs in a worker thread. setup() happens lazily before the module's first batch."""
+    if module.name not in ready:
+        try:
+            module.setup()
+        except Exception as e:
+            raise SetupError(_msg(e)) from e
+        ready.add(module.name)
+    return module.process(batch)
+
+
+def _check_dim(results: list[Result], dims: dict[str, int], name: str) -> None:
+    for r in results:
+        if r.vector is not None and dims.setdefault(name, r.vector.size) != r.vector.size:
+            raise ContractError(f"vector dim {r.vector.size} != {dims[name]} earlier in this run")
+
+
+def _write(conn, media_id: int, frame_ids: dict[int, int], module: Module,
+           results: list[Result], error: str | None) -> None:
+    with conn:
+        if error is None:
+            conn.execute(
+                "DELETE FROM results WHERE module = ? AND frame_id IN "
+                "(SELECT id FROM frames WHERE media_id = ?)", (module.name, media_id))
+            conn.executemany(
+                "INSERT INTO results (frame_id, module, label, score, bbox, vector, data) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [(frame_ids[r.frame_idx], module.name, r.label, r.score,
+                  None if r.bbox is None else json.dumps(r.bbox),
+                  None if r.vector is None else r.vector.tobytes(),
+                  None if r.data is None else json.dumps(r.data)) for r in results])
+        conn.execute(
+            "INSERT OR REPLACE INTO runs (media_id, module, version, status, error) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (media_id, module.name, module.version, "done" if error is None else "error", error))
+
+
+def _skip(path: Path, reason: str) -> bool:
+    print(f"skip {path} ({reason})", file=sys.stderr)
+    return False
+
+
+def _msg(e: Exception) -> str:
+    return f"{type(e).__name__}: {e}"
