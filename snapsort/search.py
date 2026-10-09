@@ -12,9 +12,11 @@ from snapsort.ingest import connect, load_image
 GAP = 2.0   # seconds; matches this close merge into one segment, which bridges one missed 1 fps frame
 SORTS = ("similarity", "newest", "oldest", "name")
 MIN_SCORE = 0.5   # provisional; Task 4's calibration replaces it and records the evidence in the design's Findings
-CHUNK = 900       # frame ids per IN (...) query, under SQLite's oldest variable limit (999)
+CHUNK = 900       # media ids per IN (...) query, under SQLite's oldest variable limit (999)
 
-FRAMES = ("SELECT f.id, f.media_id, f.ts, m.path, m.kind, m.added_at "
+Match = dict[int, set[int] | None]   # media id -> matched frame ids; None = the whole file, no frame marks
+
+FRAMES =("SELECT f.id, f.media_id, f.ts, m.path, m.kind, m.added_at "
           "FROM frames f JOIN media m ON m.id = f.media_id")
 
 
@@ -52,9 +54,12 @@ def _grouped(conn) -> bool:
 
 
 def search(conn, filters: list[dict], similar: dict | None = None, min_score: float = MIN_SCORE,
-           sort: str | None = None, limit: int | None = None, gap: float = GAP) -> list[Hit]:
-    """Media matching every filter (and similar to the query, when given), sorted, cut to limit.
-    Raises QueryError (see the design's Errors)."""
+           sort: str | None = None, limit: int | None = None, gap: float = GAP,
+           combine: str = "all", scope: str = "file") -> list[Hit]:
+    """Media matching the filters (similar counts as one), sorted, cut to limit.
+    combine: "all" = every filter matches the file, "any" = at least one does.
+    scope: "file" = frame-based filters (person, similar) may match on different frames of the file,
+    "frame" = they must match on the same frame. Raises QueryError (see the design's Errors)."""
     sort = sort or ("similarity" if similar else "newest")
     if sort not in SORTS:
         raise QueryError(f"unknown sort {sort!r}. choose from {', '.join(SORTS)}")
@@ -62,12 +67,24 @@ def search(conn, filters: list[dict], similar: dict | None = None, min_score: fl
         raise QueryError("sort by similarity needs a similar image")
     if limit is not None and limit < 1:
         raise QueryError(f"limit must be at least 1, got {limit}")
-    frames = _filter(conn, filters)
-    if similar is None:
-        scores = None if frames is None else dict.fromkeys(frames)
+    if combine not in ("all", "any"):
+        raise QueryError(f"combine must be all or any, got {combine!r}")
+    if scope not in ("file", "frame"):
+        raise QueryError(f"scope must be file or frame, got {scope!r}")
+    matches = [_run(conn, f, scope) for f in filters]
+    scores: dict[int, float] = {}
+    if similar is not None:
+        # under AND only files every other filter matched can match, so only their vectors are read
+        media = set.intersection(*(set(m) for m in matches)) if matches and combine == "all" else None
+        match, scores = _similar(conn, _query_vector(conn, similar), media, min_score)
+        matches.append(match)
+    if not matches:
+        matched = dict.fromkeys(r[0] for r in conn.execute("SELECT id FROM media"))
+    elif combine == "any":
+        matched = _union(matches)
     else:
-        scores = _similar(conn, _query_vector(conn, similar), frames, min_score)
-    return _rank(_hits(conn, scores, gap), sort, limit)
+        matched = _same_frame(matches) if scope == "frame" else _same_file(matches)
+    return _rank(_hits(conn, matched, scores, gap), sort, limit)
 
 
 def segments(matches: list[tuple[float, float | None]], gap: float = GAP) -> list[Segment]:
@@ -84,20 +101,52 @@ def segments(matches: list[tuple[float, float | None]], gap: float = GAP) -> lis
     return out
 
 
-def _filter(conn, filters: list[dict]) -> set[int] | None:
-    """Frame ids matching every filter. None when there are no filters, meaning every frame."""
-    frames = None
-    for f in filters:
-        fn = FILTERS.get(f.get("kind"))
-        if fn is None:
-            raise QueryError(f"unsupported filter kind: {f.get('kind')!r}")
-        got = fn(conn, f)
-        frames = got if frames is None else frames & got
-    return frames
+def _run(conn, f: dict, scope: str) -> Match:
+    fn = FILTERS.get(f.get("kind"))
+    if fn is None:
+        raise QueryError(f"unsupported filter kind: {f.get('kind')!r}")
+    return fn(conn, f, scope)
 
 
-def _person(conn, f: dict) -> set[int]:
-    """Frames with a face of the persons: all of them (intersection) or any of them (union)."""
+def _marks(frame_sets: list[set[int] | None], op) -> set[int] | None:
+    """Combine the frame marks of one file. Whole-file matches (None) add no marks; all None stays None."""
+    given = [s for s in frame_sets if s is not None]
+    return op(*given) if given else None
+
+
+def _union(matches: list[Match]) -> Match:
+    """Files any match has, marked with the frames of all of them."""
+    return {mid: _marks([m[mid] for m in matches if mid in m], set.union) for mid in set().union(*matches)}
+
+
+def _same_file(matches: list[Match]) -> Match:
+    """Files every match has, possibly on different frames, marked with the frames of all of them."""
+    both = set.intersection(*(set(m) for m in matches))
+    return {mid: _marks([m[mid] for m in matches], set.union) for mid in both}
+
+
+def _same_frame(matches: list[Match]) -> Match:
+    """Files where every frame-based match hits a shared frame, marked with the shared frames.
+    Whole-file matches only require the file."""
+    out = {}
+    for mid in set.intersection(*(set(m) for m in matches)):
+        frames = _marks([m[mid] for m in matches], set.intersection)
+        if frames is None or frames:
+            out[mid] = frames
+    return out
+
+
+def _by_media(rows) -> Match:
+    """(media id, frame id) rows -> Match."""
+    out: Match = {}
+    for mid, fid in rows:
+        out.setdefault(mid, set()).add(fid)
+    return out
+
+
+def _person(conn, f: dict, scope: str) -> Match:
+    """Files with the persons: all of them (in the same file, or frame under scope "frame") or any of them.
+    Marked with the frames the persons appear in."""
     ids = list(dict.fromkeys(f.get("ids") or []))
     match = f.get("match", "all")
     if not ids:
@@ -111,30 +160,31 @@ def _person(conn, f: dict) -> set[int]:
     missing = [str(i) for i in ids if i not in known]
     if missing:
         raise QueryError(f"unknown person id(s): {', '.join(missing)}. see snapsort people")
-    sets = [{r[0] for r in conn.execute(
-        "SELECT r.frame_id FROM person_faces pf JOIN results r ON r.id = pf.result_id WHERE pf.person_id = ?",
-        (i,))} for i in ids]
-    return set.union(*sets) if match == "any" else set.intersection(*sets)
+    each = [_by_media(conn.execute(
+        "SELECT f.media_id, r.frame_id FROM person_faces pf JOIN results r ON r.id = pf.result_id "
+        "JOIN frames f ON f.id = r.frame_id WHERE pf.person_id = ?", (i,))) for i in ids]
+    if match == "any":
+        return _union(each)
+    return _same_frame(each) if scope == "frame" else _same_file(each)
 
 
-def _place(conn, f: dict) -> set[int]:
-    """Every frame of the files whose location label is the name. Ingest stores labels stripped and lowercased."""
+def _place(conn, f: dict, scope: str) -> Match:
+    """The whole files whose location label is the name. Ingest stores labels stripped and lowercased."""
     name = str(f.get("name") or "").strip().lower()
     rows = conn.execute(
-        "SELECT g.id FROM results r JOIN frames f ON f.id = r.frame_id JOIN frames g ON g.media_id = f.media_id "
+        "SELECT DISTINCT f.media_id FROM results r JOIN frames f ON f.id = r.frame_id "
         "WHERE r.module = 'location' AND r.label = ?", (name,)).fetchall()
     if not rows:
         raise QueryError(f"no media at place {name!r}. see snapsort places")
-    return {r[0] for r in rows}
+    return dict.fromkeys(r[0] for r in rows)
 
 
-def _media_kind(conn, f: dict) -> set[int]:
-    """Every frame of the files of that kind."""
+def _media_kind(conn, f: dict, scope: str) -> Match:
+    """The whole files of that kind."""
     value = f.get("value")
     if value not in ("image", "video"):
         raise QueryError(f"mediaKind must be image or video, got {value!r}")
-    return {r[0] for r in conn.execute(
-        "SELECT f.id FROM frames f JOIN media m ON m.id = f.media_id WHERE m.kind = ?", (value,))}
+    return dict.fromkeys(r[0] for r in conn.execute("SELECT id FROM media WHERE kind = ?", (value,)))
 
 
 FILTERS = {"person": _person, "place": _place, "mediaKind": _media_kind}
@@ -173,32 +223,35 @@ def _query_vector(conn, similar: dict) -> np.ndarray:
     raise QueryError("similar needs mediaId or path")
 
 
-def _similar(conn, q: np.ndarray, frames: set[int] | None, min_score: float) -> dict[int, float]:
-    """Frame id -> cosine with q, for frames that have an image_embed vector and score at least min_score.
-    frames None means every frame."""
+def _similar(conn, q: np.ndarray, media: set[int] | None,
+             min_score: float) -> tuple[Match, dict[int, float]]:
+    """Frames with an image_embed vector scoring at least min_score against q, as a Match plus their scores.
+    Only the frames of `media` are read; None means every file."""
     # ponytail: reads every candidate vector per query (~300 MB at 100k frames when no other filter narrows them);
     # cache the matrix in a file or move to sqlite-vec if queries get slow
-    sql = "SELECT frame_id, vector FROM results WHERE module = 'image_embed'"
-    if frames is None:
+    sql = ("SELECT r.frame_id, f.media_id, r.vector FROM results r JOIN frames f ON f.id = r.frame_id "
+           "WHERE r.module = 'image_embed'")
+    if media is None:
         rows = conn.execute(sql).fetchall()
     else:
-        ids, rows = list(frames), []
+        ids, rows = list(media), []
         for s in range(0, len(ids), CHUNK):
             chunk = ids[s:s + CHUNK]
-            rows += conn.execute(f"{sql} AND frame_id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+            rows += conn.execute(f"{sql} AND f.media_id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
     if not rows:
-        return {}
-    cos = np.stack([np.frombuffer(v, "<f4") for _, v in rows]) @ q
-    return {fid: float(c) for (fid, _), c in zip(rows, cos) if c >= min_score}
+        return {}, {}
+    cos = np.stack([np.frombuffer(v, "<f4") for _, _, v in rows]) @ q
+    hits = [(mid, fid, float(c)) for (fid, mid, _), c in zip(rows, cos) if c >= min_score]
+    return _by_media((mid, fid) for mid, fid, _ in hits), {fid: c for _, fid, c in hits}
 
 
-def _hits(conn, scores: dict[int, float | None] | None, gap: float) -> list[Hit]:
-    """One Hit per file. scores maps each matched frame id to its score. None means every frame, unscored."""
+def _hits(conn, matched: Match, scores: dict[int, float], gap: float) -> list[Hit]:
+    """One Hit per matched file, with its marked frames (every frame for a whole-file match) and their scores."""
     by_media: dict[int, tuple] = {}
     for fid, mid, ts, path, kind, added_at in conn.execute(FRAMES):
-        if scores is None or fid in scores:
+        if mid in matched and (matched[mid] is None or fid in matched[mid]):
             entry = by_media.setdefault(mid, (path, kind, added_at, []))
-            entry[3].append((ts, None if scores is None else scores[fid]))
+            entry[3].append((ts, scores.get(fid)))
     return [_hit(mid, *entry, gap) for mid, entry in by_media.items()]
 
 
@@ -213,8 +266,8 @@ def _hit(media_id, path, kind, added_at, matches, gap) -> Hit:
 
 def _rank(hits: list[Hit], sort: str, limit: int | None) -> list[Hit]:
     hits.sort(key=lambda h: h.media_id)  # ties keep id order
-    if sort == "similarity":
-        hits.sort(key=lambda h: -h.score)
+    if sort == "similarity":  # under OR a file can match without a score: those go last
+        hits.sort(key=lambda h: (h.score is None, -(h.score or 0)))
     elif sort == "newest":  # added_at has 1 s resolution: a tie goes to the later insert
         hits.sort(key=lambda h: (h.added_at, h.media_id), reverse=True)
     elif sort == "oldest":

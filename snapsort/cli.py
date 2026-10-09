@@ -24,8 +24,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("modules", help="list discovered modules")
     sub.add_parser("group", help="group face results into persons")
     s = sub.add_parser("search", help="find media matching every given filter")
-    s.add_argument("--person", type=_ids, help="comma-separated person ids, all in the same frame (see `snapsort people`)")
+    s.add_argument("--person", type=_ids, help="comma-separated person ids, all in the same file (see `snapsort people`)")
     s.add_argument("--any", action="store_true", help="match any --person id instead of all")
+    s.add_argument("--or", dest="any_filter", action="store_true",
+                   help="match files that pass any filter instead of every filter")
+    s.add_argument("--same-frame", action="store_true",
+                   help="persons and similar image must match on the same frame, not anywhere in the file")
     s.add_argument("--place", help="place name (see `snapsort places`)")
     s.add_argument("--kind", choices=("image", "video"))
     similar = s.add_mutually_exclusive_group()
@@ -106,8 +110,9 @@ def _read(args) -> int:
             filters.append({"kind": "mediaKind", "value": args.kind})
         similar = {"path": str(args.similar)} if args.similar else args.similar_media
         try:
-            hits = search(conn, filters, similar, min_score=args.min_score, sort=args.sort,
-                          limit=args.limit, gap=args.gap)
+            hits = search(conn, filters, similar, min_score=args.min_score, sort=args.sort, limit=args.limit,
+                          gap=args.gap, combine="any" if args.any_filter else "all",
+                          scope="frame" if args.same_frame else "file")
         except QueryError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2

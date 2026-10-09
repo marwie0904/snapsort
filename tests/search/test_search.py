@@ -75,19 +75,51 @@ def test_empty_library_returns_nothing(db):
     assert search(db, []) == []
 
 
-def test_person_all_needs_the_same_frame(db):
+def test_person_all_means_the_same_file_by_default(db):
     _, f = media(db, "video", frames=6)
-    anna, ben = person(db, [f[1]]), person(db, [f[5]])
-    assert search(db, [{"kind": "person", "ids": [anna, ben], "match": "all"}]) == []
-    [hit] = search(db, [{"kind": "person", "ids": [anna, ben], "match": "any"}])
+    _, g = media(db, "video", frames=2)
+    anna, ben = person(db, [f[1], g[0]]), person(db, [f[5]])
+    both = {"kind": "person", "ids": [anna, ben], "match": "all"}
+    [hit] = search(db, [both])
     assert ts_of(hit) == [1.0, 5.0]
+    assert search(db, [both], scope="frame") == []
+    either = search(db, [{"kind": "person", "ids": [anna, ben], "match": "any"}])
+    assert sorted(ts_of(h) for h in either) == [[0.0], [1.0, 5.0]]
 
 
-def test_person_all_keeps_shared_frames(db):
+def test_same_frame_keeps_only_shared_frames(db):
     _, f = media(db, "video", frames=4)
     anna, ben = person(db, [f[1], f[2]]), person(db, [f[2], f[3]])
-    [hit] = search(db, [{"kind": "person", "ids": [anna, ben], "match": "all"}])
+    both = {"kind": "person", "ids": [anna, ben], "match": "all"}
+    [hit] = search(db, [both])
+    assert ts_of(hit) == [1.0, 2.0, 3.0]
+    [hit] = search(db, [both], scope="frame")
     assert ts_of(hit) == [2.0]
+
+
+def test_separate_filters_follow_the_scope_too(db):
+    _, f = media(db, "video", frames=6)
+    anna, ben = person(db, [f[1]]), person(db, [f[5]])
+    filters = [{"kind": "person", "ids": [anna], "match": "all"}, {"kind": "person", "ids": [ben], "match": "all"}]
+    [hit] = search(db, filters)
+    assert ts_of(hit) == [1.0, 5.0]
+    assert search(db, filters, scope="frame") == []
+
+
+def test_or_matches_any_filter(db):
+    tokyo, f = media(db, "video", frames=3)
+    place(db, f[0], "tokyo, japan")
+    with_anna, g = media(db, "video", frames=3)
+    anna = person(db, [g[2]])
+    both, h = media(db, "video", frames=3)
+    place(db, h[0], "tokyo, japan")
+    add_faces(db, anna, [h[1]])
+    media(db, "image")  # neither
+    hits = {h.media_id: ts_of(h) for h in search(
+        db, [{"kind": "place", "name": "tokyo, japan"}, {"kind": "person", "ids": [anna], "match": "all"}],
+        combine="any")}
+    # a whole-file match marks every frame; a person match marks the person's frames
+    assert hits == {tokyo: [0.0, 1.0, 2.0], with_anna: [2.0], both: [1.0]}
 
 
 def test_place_covers_every_frame_and_ignores_case(db):
@@ -174,6 +206,8 @@ def test_filter_errors(db, filters, message):
     ({"sort": "similarity"}, "sort by similarity needs a similar image"),
     ({"sort": "size"}, "unknown sort 'size'"),
     ({"limit": 0}, "limit must be at least 1"),
+    ({"combine": "xor"}, "combine must be all or any, got 'xor'"),
+    ({"scope": "scene"}, "scope must be file or frame, got 'scene'"),
 ])
 def test_option_errors(db, kwargs, message):
     with pytest.raises(QueryError, match=re.escape(message)):
@@ -281,8 +315,26 @@ def test_similar_stacks_with_person(db, q, rng):
     embed(db, f[0], near(q, 0.9, rng))
     embed(db, f[1], near(q, 0.8, rng))
     anna = person(db, [f[1]])
-    [hit] = search(db, [{"kind": "person", "ids": [anna], "match": "all"}], {"mediaId": query}, min_score=0.5)
-    assert hit.media_id == vid and ts_of(hit) == [1.0]
+    with_anna = [{"kind": "person", "ids": [anna], "match": "all"}]
+    [hit] = search(db, with_anna, {"mediaId": query}, min_score=0.5)
+    assert hit.media_id == vid and ts_of(hit) == [0.0, 1.0]
+    assert hit.score == pytest.approx(0.9, abs=1e-5) and hit.best_ts == 0.0
+    [hit] = search(db, with_anna, {"mediaId": query}, min_score=0.5, scope="frame")
+    assert ts_of(hit) == [1.0] and hit.score == pytest.approx(0.8, abs=1e-5)
+
+
+def test_or_with_similar_sorts_unscored_files_last(db, q, rng):
+    query, [fq] = media(db, "image")
+    close, [fc] = media(db, "image")
+    with_anna, [fa] = media(db, "image")
+    embed(db, fq, q)
+    embed(db, fc, near(q, 0.8, rng))
+    embed(db, fa, near(q, 0.1, rng))
+    anna = person(db, [fa])
+    hits = search(db, [{"kind": "person", "ids": [anna], "match": "all"}], {"mediaId": query},
+                  min_score=0.5, combine="any")
+    assert [h.media_id for h in hits] == [query, close, with_anna]
+    assert hits[2].score is None
 
 
 def test_similar_errors(db, tmp_path):
@@ -340,6 +392,16 @@ def test_cli_search_prints_segments_and_count(db, run):
     media(db, "image", name="other.jpg")
     anna = person(db, [f[i] for i in (1, 2, 3, 5, 6, 10)])
     assert run("search", "--person", str(anna)) == (0, "/lib/clip.mov  video  0:01–0:06, 0:10\n1 of 2 files\n", "")
+
+
+def test_cli_or_and_same_frame(db, run):
+    _, f = media(db, "video", frames=6, name="v.mov")
+    media(db, "image", name="i.jpg")
+    anna, ben = person(db, [f[1]]), person(db, [f[5]])
+    assert run("search", "--person", f"{anna},{ben}") == (0, "/lib/v.mov  video  0:01, 0:05\n1 of 2 files\n", "")
+    assert run("search", "--person", f"{anna},{ben}", "--same-frame") == (0, "0 of 2 files\n", "")
+    assert run("search", "--person", str(anna), "--kind", "image", "--or") == \
+        (0, "/lib/i.jpg  image\n/lib/v.mov  video  0:01\n2 of 2 files\n", "")
 
 
 def test_cli_search_shows_scores_with_similar(db, run, q):
