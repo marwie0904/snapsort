@@ -116,3 +116,59 @@ def validate(results: list[Result], frames: list[Frame]) -> list[Result]:
         score = None if r.score is None else float(r.score)
         out.append(Result(int(r.frame_idx), label, score, bbox, vector, r.data))
     return out
+
+
+def classify(path: Path) -> str | None:
+    """'image', 'video', or None for unsupported extensions."""
+    ext = path.suffix.lower()
+    return "image" if ext in IMAGE_EXTS else "video" if ext in VIDEO_EXTS else None
+
+
+def resolve_paths(paths: list[Path]) -> list[Path]:
+    """Absolute file paths to process. Explicit files are kept as given (even unsupported or
+    missing, so the runner can report them). Directories are recursed, keeping supported files
+    and ignoring anything under a dot-folder below the directory."""
+    out = []
+    for p in paths:
+        p = p.resolve()
+        if p.is_dir():
+            out += sorted(
+                f for f in p.rglob("*")
+                if f.is_file() and classify(f)
+                and not any(part.startswith(".") for part in f.relative_to(p).parts)
+            )
+        else:
+            out.append(p)
+    return out
+
+
+def load_image(path: str | Path) -> Image.Image:
+    """Decode any supported image (HEIC included) as upright RGB."""
+    with Image.open(path) as im:
+        return ImageOps.exif_transpose(im).convert("RGB")
+
+
+def extract_frames(video: Path, out: Path) -> list[Path]:
+    """Write one JPEG per second of video to out/<idx:06d>.jpg (idx from 0). Returns them in order.
+    Raises RuntimeError and leaves no out dir if ffmpeg fails or yields no frames."""
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir(parents=True)
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(video), "-vf", f"fps={FPS}", "-q:v", "2",
+         "-start_number", "0", str(out / "%06d.jpg")],
+        capture_output=True, text=True,
+    )
+    files = sorted(out.glob("*.jpg"))
+    if proc.returncode or not files:
+        shutil.rmtree(out, ignore_errors=True)
+        lines = proc.stderr.strip().splitlines()
+        raise RuntimeError(lines[-1] if lines else "ffmpeg produced no frames")
+    return files
+
+
+def connect(db_path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.executescript(SCHEMA)
+    return conn
