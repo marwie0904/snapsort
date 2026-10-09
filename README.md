@@ -20,8 +20,10 @@ A chatbot with tool calling access to every filter above, so queries like "photo
 | Part | State |
 |---|---|
 | Ingest pipeline (CLI, frames, module runner, storage) | Done |
-| Feature modules (embeddings, people, objects, location) | Not started; `example` module is the template |
-| Search, chatbot | Not started |
+| Location module (GPS + offline place names) | Done |
+| Feature modules | `objects` (YOLO11m), `clip_embed` (SigLIP 2 base); people not started |
+| Text search (`snapsort search`) | Done over stored `clip_embed` vectors |
+| Chatbot | Not started |
 
 ## Setup
 
@@ -35,12 +37,15 @@ uv sync
 ## Usage
 
 ```bash
-uv run snapsort ingest ~/Pictures/trip clip.mov   # files or folders
-uv run snapsort ingest photos --modules example   # only some modules
-uv run snapsort modules                           # list modules
+uv run snapsort modules                                         # list modules
+uv run snapsort ingest ~/Pictures/trip --modules objects,clip_embed
+uv run snapsort search "people near a bus" --limit 10
+uv run snapsort ingest photos --modules example                 # template module only
 ```
 
-Results go to `.snapsort/` in the current directory: `snapsort.db` (SQLite: `media`, `frames`, `results`, `runs`) and `frames/` (extracted video frames). Delete `.snapsort/` to start over.
+`objects` writes one result per detection (label, score, normalized bbox). `clip_embed` stores one L2-normalized vector per frame. `snapsort search` encodes the query as "this is a photo of {query}." with the same SigLIP 2 model and ranks by match probability (0-1) against stored vectors (requires a prior `clip_embed` ingest).
+
+Results go to `.snapsort/` in the current directory: `snapsort.db` (SQLite: `media`, `frames`, `results`, `runs`) and `frames/` (extracted video frames). Delete `.snapsort/` to start over. First run of YOLO/SigLIP downloads model weights.
 
 Exit codes: `0` all good, `1` a file was skipped or a module failed, `2` configuration error.
 
@@ -76,3 +81,8 @@ uv run pytest tests/modules    # modules
 Every feature goes design → plan → build. Designs live in `docs/design/`, plans in `docs/plans/` under the same file name.
 
 - Ingest pipeline: [design](docs/design/2026-10-09-ingest-pipeline.md), [plan](docs/plans/2026-10-09-ingest-pipeline.md)
+- Location module: [design](docs/design/2026-10-09-location-module.md), [plan](docs/plans/2026-10-09-location-module.md)
+
+## Credits
+
+Place names from GeoNames (geonames.org), CC BY 4.0.

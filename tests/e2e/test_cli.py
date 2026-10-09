@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import snapsort.cli as cli
+
 SNAPSORT = str(Path(sys.executable).parent / "snapsort")
 
 
@@ -17,6 +19,7 @@ def test_ingest_video_with_example_module(tmp_path, sample_video):
     assert "3 frames  example:done" in proc.stdout
     with sqlite3.connect(tmp_path / ".snapsort" / "snapsort.db") as conn:
         assert conn.execute("SELECT count(*) FROM results WHERE module = 'example'").fetchone() == (3,)
+    assert "grouping" not in proc.stdout
 
 
 def test_duplicate_module_names_run_once(tmp_path, sample_video):
@@ -42,4 +45,40 @@ def test_failed_file_exits_1(tmp_path):
 def test_modules_lists_example(tmp_path):
     proc = run("modules", cwd=tmp_path)
     assert proc.returncode == 0
-    assert proc.stdout.startswith("example\t1\t")
+    names = [line.split("\t", 1)[0] for line in proc.stdout.splitlines()]
+    assert "example" in names
+    assert "objects" in names
+    assert "clip_embed" in names
+
+
+def test_group_without_database_exits_2(tmp_path):
+    proc = run("group", cwd=tmp_path)
+    assert proc.returncode == 2
+    assert "no database" in proc.stderr
+    assert not (tmp_path / ".snapsort").exists()
+
+
+def test_group_prints_summary(tmp_path, sample_video):
+    assert run("ingest", str(sample_video), "--modules", "example", cwd=tmp_path).returncode == 0
+    proc = run("group", cwd=tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == "grouping  0 faces  0 new persons  0 joined existing\n"
+
+
+def test_ingest_groups_after_faces(tmp_path, sample_image):
+    proc = run("ingest", str(sample_image), "--modules", "faces", cwd=tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.endswith("grouping  0 faces  0 new persons  0 joined existing\n")
+
+
+def test_grouping_failure_exits_1(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".snapsort").mkdir()
+    (tmp_path / ".snapsort" / "snapsort.db").touch()
+
+    def boom(data_dir):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(cli, "run_grouping", boom)
+    assert cli.main(["group"]) == 1
+    assert "grouping failed: RuntimeError: boom" in capsys.readouterr().err
