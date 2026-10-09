@@ -276,7 +276,7 @@ def _register(conn, path: Path, kind: str, frames_root: Path) -> int:
             rows = [(media_id, 0, None, str(path))]
         else:
             files = extract_frames(path, frames_root / str(media_id))
-            rows = [(media_id, i, i / FPS, str(f)) for i, f in enumerate(files)]
+            rows = [(media_id, i, i / FPS, str(f.resolve())) for i, f in enumerate(files)]
         conn.executemany("INSERT INTO frames (media_id, idx, ts, path) VALUES (?, ?, ?, ?)", rows)
     return media_id
 

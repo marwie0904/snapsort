@@ -88,6 +88,7 @@ snapsort ingest <path>... [--modules a,b]
 - Video: `ffmpeg -nostdin -v error -i <path> -vf fps=1 -q:v 2 -start_number 0 .snapsort/frames/<media_id>/%06d.jpg`. With `-start_number 0`, file number = `idx`, and `ts = idx` (seconds). Any existing frame dir for that media id is removed first. ffmpeg applies rotation metadata by default. Verified: a 3 s clip yields exactly 3 frames.
 - The `media` row, extraction and `frames` rows happen in one transaction. If ffmpeg fails or yields 0 frames: roll back, delete the frame dir, skip the file with a warning.
 - Frames are kept on disk so new modules can run without re-decoding and search can display results.
+- `frames.path` is always absolute, so the DB can be read from any working directory.
 
 ## Module contract (`snapsort/contract.py`)
 
