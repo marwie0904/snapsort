@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 import numpy as np
 
 import snapsort.search as search_mod
+from snapsort.group import PICK_FACE, _save_centroids
 from snapsort.ingest import frame_file, load_image
 from snapsort.library import INTERNAL_DATA, disk_usage, library_for, mounted, read_id, root_for
 from snapsort.search import QueryError, search
@@ -458,6 +459,39 @@ def rename_person(params) -> None:
         raise
 
 
+def merge_people(params) -> dict:
+    """Merge persons into the first id: their faces and centroids move to it, then they are deleted.
+    The target keeps its name, or takes the first name among the others when it has none."""
+    ids = list(dict.fromkeys(int(i) for i in params.get("ids") or []))
+    if len(ids) < 2:
+        raise ApiError("BAD_REQUEST", "pick at least two people to merge")
+    if len({i // SHIFT for i in ids}) > 1:
+        raise ApiError("BAD_REQUEST", "people on different drives can't be merged")
+    lib, target = _lib(ids[0])
+    others = [i % SHIFT for i in ids[1:]]
+    marks = ",".join("?" * len(others))
+    try:
+        with lib.db() as conn:
+            names = dict(conn.execute(f"SELECT id, name FROM persons WHERE id IN (?,{marks})", [target, *others]))
+            if len(names) < len(ids):
+                raise ApiError("NOT_FOUND", "one of those people no longer exists")
+            name = next((names[p] for p in [target, *others] if names[p]), None)
+            rows = conn.execute(f"SELECT vector, weight FROM person_centroids WHERE person_id IN (?,{marks})",
+                                [target, *others]).fetchall()
+            conn.execute(f"UPDATE person_faces SET person_id = ? WHERE person_id IN ({marks})", [target, *others])
+            conn.execute(f"DELETE FROM persons WHERE id IN ({marks})", others)  # cascades their centroids
+            if rows:
+                _save_centroids(conn, target, np.stack([np.frombuffer(v, "<f4") for v, _ in rows]),
+                                np.array([w for _, w in rows], np.float64))
+            conn.execute("UPDATE persons SET name = ? WHERE id = ?", (name, target))
+            conn.execute(PICK_FACE + "id = ? AND face_id IS NULL", (target,))
+    except sqlite3.OperationalError as e:
+        if "locked" in str(e):
+            raise ApiError("BUSY", "the library is busy grouping faces. try again in a moment") from e
+        raise
+    return {"id": lib.gid(target)}
+
+
 def list_places(params=None) -> list[dict]:
     places: dict[str, dict] = {}
     for lib in libraries():
@@ -549,7 +583,7 @@ def resolve_media(params) -> str:
 METHODS = {
     "listLibraries": list_libraries, "libraryFor": library_for_path, "query": query, "getMedia": get_media,
     "getDetections": get_detections, "listPeople": list_people, "renamePerson": rename_person,
-    "listPlaces": list_places, "getLabelManifest": label_manifest, "getCounts": counts,
+    "mergePeople": merge_people, "listPlaces": list_places, "getLabelManifest": label_manifest, "getCounts": counts,
     "resolveMedia": resolve_media,
 }
 

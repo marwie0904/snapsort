@@ -296,6 +296,8 @@ export interface SnapsortApi {
   // people
   listPeople(): Promise<Person[]>;
   renamePerson(id: number, name: string): Promise<void>;
+  /** Merges the rest into the first id, which keeps its name (or takes the first other name). Same drive only. */
+  mergePeople(ids: number[]): Promise<{ id: number }>;
 
   // folders (ingest)
   listLibraries(): Promise<Library[]>;

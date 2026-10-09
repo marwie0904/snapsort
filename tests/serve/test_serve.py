@@ -1,13 +1,16 @@
 """snapsort serve: ids route to the right drive, and the stdio protocol round-trips."""
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 import snapsort.serve as serve
+from snapsort import group
 from snapsort.ingest import run_ingest
 from snapsort.modules.metadata import Metadata
 
@@ -95,3 +98,44 @@ def test_cloned_drive_is_skipped(tmp_path, monkeypatch):
     monkeypatch.setattr(serve, "mounted", lambda: [a, clone])
     assert [lib["root"] for lib in call("listLibraries")] == [str(tmp_path / "A")]
     assert call("getCounts")["all"] == 1
+
+
+def add_people(data_dir, people) -> None:
+    """Fake grouping: people is [(name, [frame index per face])], one unit vector per face."""
+    conn = sqlite3.connect(data_dir / "snapsort.db")
+    conn.executescript(group.SCHEMA)
+    frames = [r[0] for r in conn.execute("SELECT id FROM frames ORDER BY id")]
+    for k, (name, faces) in enumerate(people):
+        pid = conn.execute("INSERT INTO persons (name) VALUES (?)", (name,)).lastrowid
+        for i in faces:
+            rid = conn.execute("INSERT INTO results (frame_id, module, score, bbox, vector) "
+                               "VALUES (?, 'faces', 0.9, '[0.1, 0.1, 0.2, 0.2]', ?)",
+                               (frames[i], np.eye(8, dtype="<f4")[k].tobytes())).lastrowid
+            conn.execute("INSERT INTO person_faces VALUES (?, ?, 1.0)", (rid, pid))
+        conn.execute("INSERT INTO person_centroids VALUES (?, 0, ?, ?)", (pid, np.eye(8, dtype="<f4")[k].tobytes(),
+                                                                          len(faces)))
+    conn.commit()
+    conn.close()
+
+
+def test_merge_people(tmp_path, monkeypatch):
+    a = drive(tmp_path, "A", [("a.png", "red"), ("day 2/b.png", "blue")])
+    b = drive(tmp_path, "B", [("c.png", "green")])
+    add_people(a, [(None, [0]), ("Anna", [1]), ("Ben", [0])])
+    add_people(b, [("Cara", [0])])
+    monkeypatch.setattr(serve, "mounted", lambda: [a, b])
+    ids = {p["name"]: p["id"] for p in call("listPeople")}
+
+    bad = serve.handle({"id": 1, "method": "mergePeople", "params": {"ids": [ids[None], ids["Cara"]]}})
+    assert bad["error"]["code"] == "BAD_REQUEST"  # different drives
+    assert serve.handle({"id": 1, "method": "mergePeople", "params": {"ids": [ids[None]] * 2}})["error"]
+
+    # the unnamed target takes the first name among the others
+    assert call("mergePeople", ids=[ids[None], ids["Anna"], ids["Ben"]]) == {"id": ids[None]}
+    assert sorted((p["name"], p["count"]) for p in call("listPeople")) == [("Anna", 2), ("Cara", 1)]
+    conn = sqlite3.connect(a / "snapsort.db")
+    pid = ids[None] % serve.SHIFT
+    assert conn.execute("SELECT count(*), min(person_id) FROM person_faces").fetchone() == (3, pid)
+    assert conn.execute("SELECT count(*) FROM persons").fetchone()[0] == 1
+    assert conn.execute("SELECT sum(weight) FROM person_centroids WHERE person_id = ?", (pid,)).fetchone()[0] == 3
+    assert conn.execute("SELECT face_id FROM persons").fetchone()[0] is not None  # re-picked

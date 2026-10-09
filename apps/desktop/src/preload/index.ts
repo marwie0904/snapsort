@@ -24,6 +24,7 @@ const api: SnapsortApi = {
   listScenes: () => invoke('api:listScenes'),
   listPeople: () => invoke('api:listPeople'),
   renamePerson: (id, name) => invoke('api:renamePerson', id, name),
+  mergePeople: (ids) => invoke('api:mergePeople', ids),
   listLibraries: () => invoke('api:listLibraries'),
   listFolders: () => invoke('api:listFolders'),
   pickAndAddFolder: () => invoke('api:pickAndAddFolder'),

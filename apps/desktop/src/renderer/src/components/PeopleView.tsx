@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, User, Edit2, Check, X, Sparkles, Filter } from 'lucide-react';
+import { Search, User, Edit2, Check, X, Sparkles, Filter, Merge } from 'lucide-react';
+import { Button } from '@snapsort/ui';
 import { useUiStore } from '../stores/useUiStore';
 import { MockSnapsortApi } from '@snapsort/mock';
 import type { Person } from '@snapsort/contract';
@@ -37,6 +38,10 @@ export const PeopleView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [merging, setMerging] = useState(false);
+  const [selected, setSelected] = useState<number[]>([]); // in click order
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   // Fetch people from API
   const { data: rawPeople = [], isLoading } = useQuery({
@@ -92,6 +97,51 @@ export const PeopleView: React.FC = () => {
     }
   };
 
+  const toggleMerging = () => {
+    setMerging(!merging);
+    setSelected([]);
+    setMergeError(null);
+    setEditingId(null);
+  };
+
+  const toggleSelected = (id: number) => {
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+    setMergeError(null);
+  };
+
+  // The first selected named person keeps their name; with no names, the first selected person
+  const selectedPeople = selected.map((id) => people.find((p) => p.id === id)).filter((p): p is Person => !!p);
+  const mergeTarget = selectedPeople.find((p) => p.name?.trim()) ?? selectedPeople[0];
+
+  const doMerge = async () => {
+    if (!mergeTarget) return;
+    setMergeBusy(true);
+    try {
+      await api.mergePeople([mergeTarget.id, ...selected.filter((id) => id !== mergeTarget.id)]);
+      toggleMerging();
+      const stale = ['people', 'counts', 'query', 'personMedia', 'mediaDetail', 'mediaDetections'];
+      queryClient.invalidateQueries({ predicate: (q) => stale.includes(q.queryKey[0] as string) });
+    } catch (err) {
+      setMergeError((err as Error).message);
+    } finally {
+      setMergeBusy(false);
+    }
+  };
+
+  // Selection ring and check mark for a card in merge mode
+  const selectRing = (id: number) => (selected.includes(id) ? 'ring-2 ring-[var(--accent)]' : '');
+  const selectMark = (id: number) => (
+    <div
+      className={`absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center border ${
+        selected.includes(id)
+          ? 'bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-ink)]'
+          : 'border-[var(--border)] bg-[var(--surface-2)]'
+      }`}
+    >
+      {selected.includes(id) && <Check size={12} strokeWidth={3} />}
+    </div>
+  );
+
   const handleKeyDown = (id: number, e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       saveRename(id);
@@ -116,26 +166,55 @@ export const PeopleView: React.FC = () => {
           </p>
         </div>
 
-        {/* Search input */}
-        <div className="relative w-full sm:w-64">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Find by name..."
-            className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-full pl-9 pr-4 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-dim)] focus:outline-none focus:border-[var(--border-focus)] transition-colors"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
-            >
-              <X size={12} />
-            </button>
-          )}
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <Button variant={merging ? 'accent' : 'secondary'} size="sm" onClick={toggleMerging} className="shrink-0">
+            <Merge size={12} />
+            <span>Merge</span>
+          </Button>
+
+          {/* Search input */}
+          <div className="relative w-full sm:w-64">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Find by name..."
+              className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-full pl-9 pr-4 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-dim)] focus:outline-none focus:border-[var(--border-focus)] transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Merge action bar */}
+      {merging && (
+        <div className="sticky top-0 z-10 mt-4 flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-[var(--surface-2)] border border-[var(--border)] shadow-sm">
+          <div className="min-w-0 text-xs">
+            <div className="font-semibold text-[var(--text)] truncate">
+              {selected.length < 2
+                ? `Select at least 2 people to merge (${selected.length} selected)`
+                : `Merge ${selected.length} into ${mergeTarget?.name?.trim() || 'one unnamed person'}`}
+            </div>
+            {mergeError && <div className="text-[var(--danger)] mt-0.5 truncate">{mergeError}</div>}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="ghost" size="sm" onClick={toggleMerging}>
+              Cancel
+            </Button>
+            <Button variant="accent" size="sm" onClick={doMerge} disabled={selected.length < 2 || mergeBusy}>
+              {mergeBusy ? 'Merging...' : 'Merge'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center py-20 text-xs text-[var(--text-muted)]">
@@ -169,30 +248,38 @@ export const PeopleView: React.FC = () => {
                   return (
                     <div
                       key={person.id}
-                      onClick={() => !isEditing && navigateToPersonDetail(person.id)}
-                      className="group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--border-focus)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs"
+                      onClick={() =>
+                        merging ? toggleSelected(person.id) : !isEditing && navigateToPersonDetail(person.id)
+                      }
+                      className={`group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--border-focus)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs ${selectRing(person.id)}`}
                     >
                       {/* Top Corner Actions on Hover */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          filterByPersonAndNavigate(person.id);
-                        }}
-                        title={`Filter photos of ${person.name}`}
-                        className="absolute top-3 left-3 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Filter size={12} />
-                      </button>
+                      {merging ? (
+                        selectMark(person.id)
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              filterByPersonAndNavigate(person.id);
+                            }}
+                            title={`Filter photos of ${person.name}`}
+                            className="absolute top-3 left-3 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Filter size={12} />
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={(e) => startRename(person, e)}
-                        title="Rename person"
-                        className="absolute top-3 right-3 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Edit2 size={12} />
-                      </button>
+                          <button
+                            type="button"
+                            onClick={(e) => startRename(person, e)}
+                            title="Rename person"
+                            className="absolute top-3 right-3 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                        </>
+                      )}
 
                       {/* Avatar */}
                       <div className="relative mb-2.5">
@@ -233,10 +320,11 @@ export const PeopleView: React.FC = () => {
                         <div className="w-full text-center px-2">
                           <div
                             onClick={(e) => {
+                              if (merging) return; // the card toggles selection
                               e.stopPropagation();
                               startRename(person, e);
                             }}
-                            title="Click to rename"
+                            title={merging ? undefined : 'Click to rename'}
                             className="text-sm font-bold text-[var(--text)] truncate mx-auto max-w-[130px] group-hover:text-[var(--accent)] transition-colors cursor-text"
                           >
                             {person.name}
@@ -277,9 +365,12 @@ export const PeopleView: React.FC = () => {
                   return (
                     <div
                       key={person.id}
-                      onClick={() => !isEditing && navigateToPersonDetail(person.id)}
-                      className="group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs"
+                      onClick={() =>
+                        merging ? toggleSelected(person.id) : !isEditing && navigateToPersonDetail(person.id)
+                      }
+                      className={`group relative flex flex-col items-center justify-center aspect-square p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] transition-all cursor-pointer shadow-xs ${selectRing(person.id)}`}
                     >
+                      {merging && selectMark(person.id)}
                       {/* Avatar */}
                       <div className="relative overflow-hidden w-20 h-20 rounded-full bg-[var(--surface-2)] border-2 border-dashed border-[var(--border)] group-hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors shadow-sm mb-2.5">
                         <User size={24} strokeWidth={1.5} />
@@ -312,13 +403,15 @@ export const PeopleView: React.FC = () => {
                         </div>
                       ) : (
                         <div className="flex flex-col items-center text-center w-full px-2">
-                          <button
-                            type="button"
-                            onClick={(e) => startRename(person, e)}
-                            className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all shadow-xs"
-                          >
-                            <span>+ Add Name</span>
-                          </button>
+                          {!merging && (
+                            <button
+                              type="button"
+                              onClick={(e) => startRename(person, e)}
+                              className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all shadow-xs"
+                            >
+                              <span>+ Add Name</span>
+                            </button>
+                          )}
                           <span className="text-xs text-[var(--text-muted)] font-medium tabular-nums mt-1">
                             {person.count} items
                           </span>

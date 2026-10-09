@@ -317,6 +317,21 @@ export class MockSnapsortApi implements SnapsortApi {
     if (p) p.name = name;
   }
 
+  async mergePeople(ids: number[]): Promise<{ id: number }> {
+    const merged = [...new Set(ids)]
+      .map((id) => this.people.find((p) => p.id === id))
+      .filter((p): p is Person => !!p);
+    if (merged.length < 2) throw new Error('pick at least two people to merge');
+    const [target, ...others] = merged;
+    this.people = this.people.filter((p) => !others.includes(p));
+    this.people[this.people.indexOf(target)] = {
+      ...target,
+      name: target.name || others.find((p) => p.name)?.name || null,
+      count: merged.reduce((n, p) => n + p.count, 0),
+    };
+    return { id: target.id };
+  }
+
   async listLibraries(): Promise<Library[]> {
     const node = (f: Folder) => ({ id: f.id, name: f.name, path: f.path, count: 0, children: [] });
     return [
