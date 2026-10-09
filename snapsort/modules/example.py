@@ -19,6 +19,6 @@ class Example(Module):
     def process(self, frames: list[Frame]) -> list[Result]:
         results = []
         for f in frames:
-            mean = np.asarray(f.image, dtype=np.float32).reshape(-1, 3).mean(axis=0) / 255
+            mean = np.asarray(f.image).reshape(-1, 3).mean(axis=0) / 255
             results.append(Result(f.idx, label=CHANNELS[int(mean.argmax())], score=1.0, vector=mean))
         return results
