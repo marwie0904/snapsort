@@ -9,6 +9,8 @@ interface MediaCanvasProps {
   showDetections: boolean;
   hoveredEntityId: string | null;
   onHoverEntity: (id: string | null) => void;
+  /** When non-empty, only these entities' boxes are drawn. */
+  selectedEntityIds?: string[];
   currentTimestamp: number;
   isPlaying: boolean;
   onTogglePlay: () => void;
@@ -34,6 +36,7 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
   showDetections,
   hoveredEntityId,
   onHoverEntity,
+  selectedEntityIds = [],
   currentTimestamp,
   isPlaying,
   onTogglePlay,
@@ -51,7 +54,10 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
   const [natural, setNatural] = useState({ w: media.width || 16, h: media.height || 10 });
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
 
-  useEffect(() => setNatural({ w: media.width || 16, h: media.height || 10 }), [media.id, media.width, media.height]);
+  useEffect(
+    () => setNatural({ w: media.width || 16, h: media.height || 10 }),
+    [media.id, media.width, media.height],
+  );
 
   // The media is letterboxed in the canvas; size a box to it so detection boxes line up with the picture.
   useLayoutEffect(() => {
@@ -79,7 +85,8 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
   }, [playbackRate, playable]);
   useEffect(() => {
     const v = videoRef.current;
-    if (v && v.readyState > 0 && Math.abs(v.currentTime - currentTimestamp) > 0.5) v.currentTime = currentTimestamp;
+    if (v && v.readyState > 0 && Math.abs(v.currentTime - currentTimestamp) > 0.5)
+      v.currentTime = currentTimestamp;
   }, [currentTimestamp]);
 
   return (
@@ -95,6 +102,9 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
               ref={videoRef}
               src={`snapsort-media://file/${media.id}`}
               className="w-full h-full"
+              // A filter keeps Chromium from handing the video to macOS as its own layer, which shows rotated
+              // iPhone clips upside down on screen (screenshots look right). Visually a no-op.
+              style={{ filter: 'saturate(1.001)' }}
               playsInline
               onLoadedMetadata={(e) => {
                 const v = e.currentTarget;
@@ -125,7 +135,12 @@ export const MediaCanvas: React.FC<MediaCanvasProps> = ({
           )}
           {/* Interactive Detection Bounding Box Overlays, over the picture itself */}
           {showDetections && detections && !(isPlaying && playable) && (
-            <DetectionBoxes detections={detections} hoveredEntityId={hoveredEntityId} onHoverEntity={onHoverEntity} />
+            <DetectionBoxes
+              detections={detections}
+              hoveredEntityId={hoveredEntityId}
+              onHoverEntity={onHoverEntity}
+              selectedEntityIds={selectedEntityIds}
+            />
           )}
         </div>
       )}
@@ -192,73 +207,79 @@ const DetectionBoxes: React.FC<{
   detections: Detections;
   hoveredEntityId: string | null;
   onHoverEntity: (id: string | null) => void;
-}> = ({ detections, hoveredEntityId, onHoverEntity }) => (
-  <div className="absolute inset-0 z-10 pointer-events-none">
-    {/* 1. Face Bounding Boxes (Electric Cyan #5AC8FA) */}
-    {detections.faces.map((face, index) => {
-      const entityId = `person-${face.personId ?? index}`;
-      const isHovered = hoveredEntityId === entityId;
-      const { x, y, w, h } = face.box;
+  selectedEntityIds: string[];
+}> = ({ detections, hoveredEntityId, onHoverEntity, selectedEntityIds }) => {
+  const hidden = (id: string) => selectedEntityIds.length > 0 && !selectedEntityIds.includes(id);
+  return (
+    <div className="absolute inset-0 z-10 pointer-events-none">
+      {/* 1. Face Bounding Boxes (Electric Cyan #5AC8FA) */}
+      {detections.faces.map((face, index) => {
+        const entityId = `person-${face.personId ?? `unknown-${index}`}`;
+        if (hidden(entityId)) return null;
+        const isHovered = hoveredEntityId === entityId;
+        const { x, y, w, h } = face.box;
 
-      return (
-        <div
-          key={entityId}
-          onMouseEnter={() => onHoverEntity(entityId)}
-          onMouseLeave={() => onHoverEntity(null)}
-          style={{
-            left: `${x * 100}%`,
-            top: `${y * 100}%`,
-            width: `${w * 100}%`,
-            height: `${h * 100}%`,
-          }}
-          className={`absolute pointer-events-auto rounded-sm border-[1.5px] border-[#5AC8FA] transition-all duration-150 cursor-pointer ${
-            isHovered
-              ? 'bg-[#5AC8FA]/25 ring-2 ring-[#5AC8FA]/50 shadow-[0_0_16px_rgba(90,200,250,0.4)] z-30 scale-[1.01]'
-              : 'bg-[#5AC8FA]/10 hover:bg-[#5AC8FA]/20'
-          }`}
-        >
-          {/* Person Tag Chip */}
-          <div className="absolute -top-5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[#5AC8FA] text-[#0F0F0F] text-[10px] font-bold whitespace-nowrap shadow-sm">
-            <User size={10} className="shrink-0 stroke-[2.5]" />
-            <span>{face.name || 'Unnamed'}</span>
+        return (
+          <div
+            key={`${entityId}-${index}`}
+            onMouseEnter={() => onHoverEntity(entityId)}
+            onMouseLeave={() => onHoverEntity(null)}
+            style={{
+              left: `${x * 100}%`,
+              top: `${y * 100}%`,
+              width: `${w * 100}%`,
+              height: `${h * 100}%`,
+            }}
+            className={`absolute pointer-events-auto rounded-sm border-[1.5px] border-[#5AC8FA] transition-all duration-150 cursor-pointer ${
+              isHovered
+                ? 'bg-[#5AC8FA]/25 ring-2 ring-[#5AC8FA]/50 shadow-[0_0_16px_rgba(90,200,250,0.4)] z-30 scale-[1.01]'
+                : 'bg-[#5AC8FA]/10 hover:bg-[#5AC8FA]/20'
+            }`}
+          >
+            {/* Person Tag Chip */}
+            <div className="absolute -top-5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[#5AC8FA] text-[#0F0F0F] text-[10px] font-bold whitespace-nowrap shadow-sm">
+              <User size={10} className="shrink-0 stroke-[2.5]" />
+              <span>{face.name || 'Unnamed'}</span>
+            </div>
           </div>
-        </div>
-      );
-    })}
+        );
+      })}
 
-    {/* 2. Object Bounding Boxes (Electric Cyan #5AC8FA) */}
-    {detections.objects.map((obj, index) => {
-      const entityId = `object-${obj.labelId}-${index}`;
-      const isHovered = hoveredEntityId === entityId;
-      const { x, y, w, h } = obj.box;
+      {/* 2. Object Bounding Boxes (Electric Cyan #5AC8FA) */}
+      {detections.objects.map((obj, index) => {
+        const entityId = `object-${obj.labelId}`; // same id as the inspector card and timeline bars
+        if (hidden(entityId)) return null;
+        const isHovered = hoveredEntityId === entityId;
+        const { x, y, w, h } = obj.box;
 
-      return (
-        <div
-          key={entityId}
-          onMouseEnter={() => onHoverEntity(entityId)}
-          onMouseLeave={() => onHoverEntity(null)}
-          style={{
-            left: `${x * 100}%`,
-            top: `${y * 100}%`,
-            width: `${w * 100}%`,
-            height: `${h * 100}%`,
-          }}
-          className={`absolute pointer-events-auto rounded-sm border-[1.5px] border-[#5AC8FA] transition-all duration-150 cursor-pointer ${
-            isHovered
-              ? 'bg-[#5AC8FA]/25 ring-2 ring-[#5AC8FA]/50 shadow-[0_0_16px_rgba(90,200,250,0.4)] z-30 scale-[1.01]'
-              : 'bg-[#5AC8FA]/10 hover:bg-[#5AC8FA]/20'
-          }`}
-        >
-          {/* Object Tag Chip */}
-          <div className="absolute -top-5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[#5AC8FA] text-[#0F0F0F] text-[10px] font-bold whitespace-nowrap shadow-sm">
-            <Box size={10} className="shrink-0 stroke-[2.5]" />
-            <span>{obj.name || obj.labelId}</span>
-            <span className="text-[9px] opacity-85 font-mono">
-              {Math.round(obj.score * 100)}%
-            </span>
+        return (
+          <div
+            key={`${entityId}-${index}`}
+            onMouseEnter={() => onHoverEntity(entityId)}
+            onMouseLeave={() => onHoverEntity(null)}
+            style={{
+              left: `${x * 100}%`,
+              top: `${y * 100}%`,
+              width: `${w * 100}%`,
+              height: `${h * 100}%`,
+            }}
+            className={`absolute pointer-events-auto rounded-sm border-[1.5px] border-[#5AC8FA] transition-all duration-150 cursor-pointer ${
+              isHovered
+                ? 'bg-[#5AC8FA]/25 ring-2 ring-[#5AC8FA]/50 shadow-[0_0_16px_rgba(90,200,250,0.4)] z-30 scale-[1.01]'
+                : 'bg-[#5AC8FA]/10 hover:bg-[#5AC8FA]/20'
+            }`}
+          >
+            {/* Object Tag Chip */}
+            <div className="absolute -top-5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[#5AC8FA] text-[#0F0F0F] text-[10px] font-bold whitespace-nowrap shadow-sm">
+              <Box size={10} className="shrink-0 stroke-[2.5]" />
+              <span>{obj.name || obj.labelId}</span>
+              <span className="text-[9px] opacity-85 font-mono">
+                {Math.round(obj.score * 100)}%
+              </span>
+            </div>
           </div>
-        </div>
-      );
-    })}
-  </div>
-);
+        );
+      })}
+    </div>
+  );
+};

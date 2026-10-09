@@ -1,14 +1,7 @@
-import React, { useRef, useState, useCallback, useMemo } from 'react';
-import {
-  Play,
-  Pause,
-  RotateCcw,
-  RotateCw,
-  User,
-  Box,
-  Tag,
-  Gauge,
-} from 'lucide-react';
+import React, { useRef, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { Play, Pause, RotateCcw, RotateCw, Gauge } from 'lucide-react';
+import { toRanges, inRange, formatTime, formatRange } from '../utils/timeRanges';
 
 interface VideoTimelineScrubberProps {
   durationS: number;
@@ -21,17 +14,45 @@ interface VideoTimelineScrubberProps {
   tags: Array<{ id: string; name: string; timestamps?: number[] }>;
   hoveredEntityId: string | null;
   onHoverEntity: (id: string | null) => void;
+  /** When non-empty, only these entities' bars are drawn. */
+  selectedEntityIds?: string[];
   playbackSpeed: number;
   onChangePlaybackSpeed: (speed: number) => void;
   /** Seconds the current search matched, marked along the bottom of the track. */
   matches?: number[];
+  /** For the hover preview: snapsort-media://frame/<mediaId>/<second>, one frame per second. */
+  mediaId: number;
+  frameCount?: number;
+  aspectRatio?: number;
 }
 
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
+// One lane per kind: persons top, objects middle, tags bottom (search ticks sit under them)
+const LANES = [
+  {
+    label: 'Persons',
+    top: 'top-[5px]',
+    bar: 'bg-sky-500 dark:bg-[#38BDF8]',
+    glow: 'ring-2 ring-sky-400 dark:ring-[#38BDF8] shadow-[0_0_8px_#38BDF8]',
+    pill: 'text-sky-800 dark:text-[#38BDF8] bg-sky-100 dark:bg-[#0E273C] border-sky-300 dark:border-[#38BDF8]/30',
+  },
+  {
+    label: 'Objects',
+    top: 'top-4',
+    bar: 'bg-amber-500 dark:bg-[#FFC400]',
+    glow: 'ring-2 ring-amber-400 dark:ring-[#FFC400] shadow-[0_0_8px_#FFC400]',
+    pill: 'text-amber-900 dark:text-[#FFC400] bg-amber-100 dark:bg-[#2E2405] border-amber-300 dark:border-[#FFC400]/30',
+  },
+  {
+    label: 'Tags & Scenes',
+    top: 'top-[27px]',
+    bar: 'bg-emerald-500 dark:bg-[#34D399]',
+    glow: 'ring-2 ring-emerald-400 dark:ring-[#34D399] shadow-[0_0_8px_#34D399]',
+    pill: 'text-emerald-900 dark:text-[#34D399] bg-emerald-100 dark:bg-[#0A261B] border-emerald-300 dark:border-[#34D399]/30',
+  },
+];
+
+const PREVIEW_W = 160;
+const TOOLTIP_HALF = 92; // half the tooltip's width (PREVIEW_W + padding), keeps it over the track
 
 export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
   durationS,
@@ -44,68 +65,44 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
   tags,
   hoveredEntityId,
   onHoverEntity,
+  selectedEntityIds = [],
   playbackSpeed,
   onChangePlaybackSpeed,
   matches = [],
+  mediaId,
+  frameCount,
+  aspectRatio = 16 / 9,
 }) => {
   const trackRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredTs, setHoveredTs] = useState<number | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<number>(0);
+  // Viewport coordinates: the tooltip is portalled to <body> so no overflow-hidden ancestor clips it
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [failedFrame, setFailedFrame] = useState<string | null>(null);
 
   const safeDuration = Math.max(1, durationS);
   const progressPercent = Math.min(100, Math.max(0, (currentTimestamp / safeDuration) * 100));
 
-  // Compute timestamp markers with metadata
-  const personMarkers = useMemo(() => {
-    const list: Array<{ ts: number; personId: number; name: string }> = [];
-    people.forEach((p) => {
-      (p.timestamps || []).forEach((ts) => {
-        list.push({ ts, personId: p.id, name: p.name || 'Unnamed person' });
-      });
-    });
-    return list;
-  }, [people]);
+  // Entities per lane, each with its contiguous appearance ranges
+  const laneEntities = useMemo(
+    () => [
+      people.map((p) => ({ id: `person-${p.id}`, name: p.name || 'Unnamed person', ranges: toRanges(p.timestamps) })),
+      labels.map((l) => ({ id: `object-${l.labelId}`, name: l.name || l.labelId, ranges: toRanges(l.timestamps) })),
+      tags.map((t) => ({ id: `tag-${t.id}`, name: t.name, ranges: toRanges(t.timestamps) })),
+    ],
+    [people, labels, tags]
+  );
 
-  const objectMarkers = useMemo(() => {
-    const list: Array<{ ts: number; labelId: string; name: string }> = [];
-    labels.forEach((l) => {
-      (l.timestamps || []).forEach((ts) => {
-        list.push({ ts, labelId: l.labelId, name: l.name || l.labelId });
-      });
-    });
-    return list;
-  }, [labels]);
-
-  const tagMarkers = useMemo(() => {
-    const list: Array<{ ts: number; id: string; name: string }> = [];
-    tags.forEach((t) => {
-      (t.timestamps || []).forEach((ts) => {
-        list.push({ ts, id: t.id, name: t.name });
-      });
-    });
-    return list;
-  }, [tags]);
-
-  // Resolve entities active at hovered timestamp
+  // Entities present at the hovered second, per lane
   const entitiesAtHoveredTs = useMemo(() => {
     if (hoveredTs === null) return null;
-    const activePeople = people
-      .filter((p) => p.timestamps?.some((t) => Math.abs(t - hoveredTs) <= 1))
-      .map((p) => p.name || 'Unnamed person');
-    const activeObjects = labels
-      .filter((l) => l.timestamps?.some((t) => Math.abs(t - hoveredTs) <= 1))
-      .map((l) => l.name || l.labelId);
-    const activeTags = tags
-      .filter((t) => t.timestamps?.some((time) => Math.abs(time - hoveredTs) <= 1))
-      .map((t) => t.name);
+    return laneEntities.map((list) => list.filter((e) => e.ranges.some((r) => inRange(r, hoveredTs))));
+  }, [hoveredTs, laneEntities]);
 
-    return {
-      people: activePeople,
-      objects: activeObjects,
-      tags: activeTags,
-    };
-  }, [hoveredTs, people, labels, tags]);
+  const frameSrc =
+    hoveredTs === null
+      ? null
+      : `snapsort-media://frame/${mediaId}/${frameCount ? Math.min(hoveredTs, frameCount - 1) : hoveredTs}`;
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!trackRef.current) return;
@@ -122,7 +119,10 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const ts = Math.floor(ratio * safeDuration);
     setHoveredTs(ts);
-    setTooltipPos(e.clientX - rect.left);
+    setTooltipPos({
+      x: Math.max(rect.left + TOOLTIP_HALF, Math.min(e.clientX, rect.right - TOOLTIP_HALF)),
+      y: rect.top,
+    });
 
     if (isDragging) {
       onSeek(ts);
@@ -243,60 +243,28 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
             />
           ))}
 
-          {/* --- COLOR-CODED MARKERS --- */}
-          {/* 1. Person Markers (Theme-calibrated Sky/Cyan) */}
-          {personMarkers.map((m, idx) => {
-            const leftPercent = (m.ts / safeDuration) * 100;
-            const isHovered = hoveredEntityId === `person-${m.personId}`;
-            return (
-              <div
-                key={`p-${m.personId}-${m.ts}-${idx}`}
-                style={{ left: `${leftPercent}%` }}
-                onMouseEnter={() => onHoverEntity(`person-${m.personId}`)}
-                onMouseLeave={() => onHoverEntity(null)}
-                className={`absolute top-1.5 bottom-6 w-1 rounded-full bg-sky-500 dark:bg-[#38BDF8] z-10 transition-transform ${
-                  isHovered ? 'scale-y-125 ring-2 ring-sky-400 dark:ring-[#38BDF8] shadow-[0_0_8px_#38BDF8]' : 'opacity-80 hover:opacity-100 hover:scale-110'
-                }`}
-                title={`[${formatTime(m.ts)}] Person: ${m.name}`}
-              />
-            );
-          })}
-
-          {/* 2. Object Markers (Theme-calibrated Amber) */}
-          {objectMarkers.map((m, idx) => {
-            const leftPercent = (m.ts / safeDuration) * 100;
-            const isHovered = hoveredEntityId === `object-${m.labelId}`;
-            return (
-              <div
-                key={`o-${m.labelId}-${m.ts}-${idx}`}
-                style={{ left: `${leftPercent}%` }}
-                onMouseEnter={() => onHoverEntity(`object-${m.labelId}`)}
-                onMouseLeave={() => onHoverEntity(null)}
-                className={`absolute top-4 bottom-3 w-1 rounded-full bg-amber-500 dark:bg-[#FFC400] z-10 transition-transform ${
-                  isHovered ? 'scale-y-125 ring-2 ring-amber-400 dark:ring-[#FFC400] shadow-[0_0_8px_#FFC400]' : 'opacity-80 hover:opacity-100 hover:scale-110'
-                }`}
-                title={`[${formatTime(m.ts)}] Object: ${m.name}`}
-              />
-            );
-          })}
-
-          {/* 3. Tag Markers (Theme-calibrated Emerald) */}
-          {tagMarkers.map((m, idx) => {
-            const leftPercent = (m.ts / safeDuration) * 100;
-            const isHovered = hoveredEntityId === `tag-${m.id}`;
-            return (
-              <div
-                key={`t-${m.id}-${m.ts}-${idx}`}
-                style={{ left: `${leftPercent}%` }}
-                onMouseEnter={() => onHoverEntity(`tag-${m.id}`)}
-                onMouseLeave={() => onHoverEntity(null)}
-                className={`absolute top-6 bottom-1.5 w-1 rounded-full bg-emerald-500 dark:bg-[#34D399] z-10 transition-transform ${
-                  isHovered ? 'scale-y-125 ring-2 ring-emerald-400 dark:ring-[#34D399] shadow-[0_0_8px_#34D399]' : 'opacity-80 hover:opacity-100 hover:scale-110'
-                }`}
-                title={`[${formatTime(m.ts)}] Tag: ${m.name}`}
-              />
-            );
-          })}
+          {/* --- COLOR-CODED RANGE BARS (one per contiguous appearance) --- */}
+          {LANES.map((lane, li) =>
+            laneEntities[li].map((entity) => {
+              if (selectedEntityIds.length > 0 && !selectedEntityIds.includes(entity.id)) return null;
+              const isHovered = hoveredEntityId === entity.id || selectedEntityIds.includes(entity.id);
+              return entity.ranges.map((r) => (
+                <div
+                  key={`${entity.id}-${r.start}`}
+                  style={{
+                    left: `${(r.start / safeDuration) * 100}%`,
+                    width: `${(Math.max(0, Math.min(r.end + 1, safeDuration) - r.start) / safeDuration) * 100}%`,
+                  }}
+                  onMouseEnter={() => onHoverEntity(entity.id)}
+                  onMouseLeave={() => onHoverEntity(null)}
+                  className={`absolute ${lane.top} h-2 min-w-1 rounded-full ${lane.bar} transition-opacity ${
+                    isHovered ? `opacity-100 z-10 ${lane.glow}` : 'opacity-50 hover:opacity-90'
+                  }`}
+                  title={`${entity.name}: ${formatRange(r)}`}
+                />
+              ));
+            })
+          )}
 
           {/* Playhead Pin Handle */}
           <div
@@ -308,52 +276,44 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
           </div>
         </div>
 
-        {/* Scrubber Hover Tooltip (outside the track, whose overflow-hidden would clip it) */}
-        {hoveredTs !== null && entitiesAtHoveredTs && (
-          <div
-            style={{
-              left: `${Math.max(60, Math.min(tooltipPos, (trackRef.current?.clientWidth || 300) - 100))}px`,
-            }}
-            className="absolute -top-14 -translate-x-1/2 z-40 px-2.5 py-1.5 rounded-xl bg-[var(--surface-1)]/95 border border-[var(--border)] shadow-2xl backdrop-blur-md pointer-events-none flex flex-col items-center gap-1 min-w-[120px]"
-          >
-            <span className="text-[11px] font-mono text-[var(--text)] font-semibold">
-              {formatTime(hoveredTs)}
-            </span>
+        {/* Scrubber Hover Tooltip: frame preview + who/what is on screen at that second */}
+        {hoveredTs !== null &&
+          entitiesAtHoveredTs &&
+          createPortal(
+            <div
+              style={{ left: tooltipPos.x, top: tooltipPos.y - 8 }}
+              className="fixed -translate-x-1/2 -translate-y-full z-50 w-[184px] p-1.5 rounded-xl bg-[var(--surface-1)]/95 border border-[var(--border)] shadow-2xl backdrop-blur-md pointer-events-none flex flex-col items-center gap-1"
+            >
+              {frameSrc && failedFrame !== frameSrc && (
+                <img
+                  src={frameSrc}
+                  alt=""
+                  onError={() => setFailedFrame(frameSrc)}
+                  style={{ width: PREVIEW_W * Math.min(1, aspectRatio), aspectRatio }}
+                  className="rounded-lg object-cover bg-[var(--surface-2)]"
+                />
+              )}
 
-            {/* Tag / Person / Object summary in tooltip */}
-            <div className="flex items-center gap-1.5 flex-wrap justify-center text-[9px]">
-              {entitiesAtHoveredTs.people.map((name, i) => (
-                <span
-                  key={`p-${i}`}
-                  className="text-sky-800 dark:text-[#38BDF8] bg-sky-100 dark:bg-[#0E273C] px-1 py-0.5 rounded border border-sky-300 dark:border-[#38BDF8]/30 font-medium"
-                >
-                  {name}
-                </span>
-              ))}
-              {entitiesAtHoveredTs.objects.map((name, i) => (
-                <span
-                  key={`o-${i}`}
-                  className="text-amber-900 dark:text-[#FFC400] bg-amber-100 dark:bg-[#2E2405] px-1 py-0.5 rounded border border-amber-300 dark:border-[#FFC400]/30 font-medium"
-                >
-                  {name}
-                </span>
-              ))}
-              {entitiesAtHoveredTs.tags.map((name, i) => (
-                <span
-                  key={`t-${i}`}
-                  className="text-emerald-900 dark:text-[#34D399] bg-emerald-100 dark:bg-[#0A261B] px-1 py-0.5 rounded border border-emerald-300 dark:border-[#34D399]/30 font-medium"
-                >
-                  {name}
-                </span>
-              ))}
-              {entitiesAtHoveredTs.people.length === 0 &&
-                entitiesAtHoveredTs.objects.length === 0 &&
-                entitiesAtHoveredTs.tags.length === 0 && (
+              <span className="text-[11px] font-mono text-[var(--text)] font-semibold">
+                {formatTime(hoveredTs)}
+              </span>
+
+              {/* Tag / Person / Object summary in tooltip */}
+              <div className="flex items-center gap-1.5 flex-wrap justify-center text-[9px]">
+                {LANES.map((lane, li) =>
+                  entitiesAtHoveredTs[li].map((entity) => (
+                    <span key={entity.id} className={`${lane.pill} px-1 py-0.5 rounded border font-medium`}>
+                      {entity.name}
+                    </span>
+                  ))
+                )}
+                {entitiesAtHoveredTs.every((list) => list.length === 0) && (
                   <span className="text-[var(--text-muted)]">No tags at frame</span>
                 )}
-            </div>
-          </div>
-        )}
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
 
       {/* 3. Color-Coded Legend Footer */}
@@ -362,18 +322,14 @@ export const VideoTimelineScrubber: React.FC<VideoTimelineScrubberProps> = ({
           <span className="text-[10px] uppercase font-semibold tracking-wider text-[var(--text-muted)] opacity-80">
             Timeline Tags:
           </span>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-sky-500 dark:bg-[#38BDF8]" />
-            <span className="text-[var(--text)]">Persons ({personMarkers.length})</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-500 dark:bg-[#FFC400]" />
-            <span className="text-[var(--text)]">Objects ({objectMarkers.length})</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-[#34D399]" />
-            <span className="text-[var(--text)]">Tags & Scenes ({tagMarkers.length})</span>
-          </div>
+          {LANES.map((lane, li) => (
+            <div key={lane.label} className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${lane.bar}`} />
+              <span className="text-[var(--text)]">
+                {lane.label} ({laneEntities[li].length})
+              </span>
+            </div>
+          ))}
         </div>
 
         <span className="text-[10px] text-[var(--text-muted)] opacity-70">

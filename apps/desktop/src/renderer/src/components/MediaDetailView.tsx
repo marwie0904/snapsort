@@ -61,6 +61,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [videoFailed, setVideoFailed] = useState(false);
   useEffect(() => setVideoFailed(false), [selectedMediaId]);
+  const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
+  useEffect(() => setSelectedEntityIds([]), [selectedMediaId]);
   // Boxes exist per 1 fps frame, so fetch them per whole second
   const detectionTs = Math.floor(currentMediaTimestamp);
 
@@ -272,6 +274,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
               showDetections={showDetections}
               hoveredEntityId={hoveredEntityId}
               onHoverEntity={setHoveredEntityId}
+              selectedEntityIds={selectedEntityIds}
               currentTimestamp={currentMediaTimestamp}
               isPlaying={isPlaying}
               onTogglePlay={togglePlayPause}
@@ -298,9 +301,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
                 tags={media.tags || []}
                 hoveredEntityId={hoveredEntityId}
                 onHoverEntity={setHoveredEntityId}
+                selectedEntityIds={selectedEntityIds}
                 playbackSpeed={playbackSpeed}
                 matches={items.find((i) => i.id === media.id)?.matches?.map((m) => m.ts)}
                 onChangePlaybackSpeed={setPlaybackSpeed}
+                mediaId={media.id}
+                frameCount={media.frames?.length}
+                aspectRatio={media.width && media.height ? media.width / media.height : undefined}
               />
             </div>
           )}
@@ -322,6 +329,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({ items }) => {
           onSeek={seekToTimestamp}
           hoveredEntityId={hoveredEntityId}
           onHoverEntity={setHoveredEntityId}
+          selectedEntityIds={selectedEntityIds}
+          onToggleEntity={(id) =>
+            setSelectedEntityIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
+          }
           activeTab={inspectorTab}
           onTabChange={setInspectorTab}
         />

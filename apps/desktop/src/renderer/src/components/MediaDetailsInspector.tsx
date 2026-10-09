@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
-import type { MediaDetail } from '@snapsort/contract';
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import type { MediaDetail, SnapsortApi } from '@snapsort/contract';
+import { MockSnapsortApi } from '@snapsort/mock';
 import {
   User,
   Box,
@@ -7,10 +9,21 @@ import {
   MapPin,
   Calendar,
   Folder as FolderIcon,
-  Clock,
   Layers,
   ListOrdered,
+  ChevronDown,
 } from 'lucide-react';
+import { FaceImage } from './FaceImage';
+import { toRanges, inRange, formatTime, formatRange, type TimeRange } from '../utils/timeRanges';
+
+const mockApiFallback = new MockSnapsortApi();
+
+function getApi(): SnapsortApi {
+  if (typeof window !== 'undefined' && window.snapsort) {
+    return window.snapsort;
+  }
+  return mockApiFallback;
+}
 
 interface MediaDetailsInspectorProps {
   media: MediaDetail;
@@ -18,6 +31,9 @@ interface MediaDetailsInspectorProps {
   onSeek: (ts: number) => void;
   hoveredEntityId: string | null;
   onHoverEntity: (id: string | null) => void;
+  /** Entities picked by clicking their card; the timeline shows only these when any are picked. */
+  selectedEntityIds: string[];
+  onToggleEntity: (id: string) => void;
   activeTab: 'categorized' | 'timeline';
   onTabChange: (tab: 'categorized' | 'timeline') => void;
 }
@@ -33,13 +49,200 @@ function formatWhen(when: string, utc = false): string {
   const d = new Date(when.replace(' ', 'T') + (utc ? 'Z' : ''));
   return Number.isNaN(d.getTime())
     ? when
-    : d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    : d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
 }
 
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+// Per-kind colors (sky persons, amber objects, emerald tags) and fallback icon
+const KINDS = {
+  person: {
+    Icon: User,
+    nameClass: '',
+    icon: 'text-sky-700 dark:text-[#38BDF8]',
+    hovered:
+      'bg-sky-50/80 dark:bg-[#0E273C] border-sky-400 dark:border-[#38BDF8]/60 shadow-[0_0_12px_rgba(56,189,248,0.25)]',
+    idle: 'bg-[var(--surface-2)] border-[var(--border)] hover:border-sky-400/50',
+    pillActive:
+      'bg-sky-500 text-white dark:bg-[#38BDF8] dark:text-[#0A1A28] font-bold shadow-sm scale-105',
+    pill: 'bg-sky-100 text-sky-800 border border-sky-300 hover:bg-sky-200 dark:bg-[#0A1A28] dark:text-[#38BDF8] dark:border-[#38BDF8]/30 dark:hover:bg-[#38BDF8]/20',
+  },
+  object: {
+    Icon: Box,
+    nameClass: 'capitalize',
+    icon: 'text-amber-700 dark:text-[#FFC400]',
+    hovered:
+      'bg-amber-50/80 dark:bg-[#2E2405] border-amber-400 dark:border-[#FFC400]/60 shadow-[0_0_12px_rgba(255,196,0,0.25)]',
+    idle: 'bg-[var(--surface-2)] border-[var(--border)] hover:border-amber-400/50',
+    pillActive:
+      'bg-amber-500 text-white dark:bg-[#FFC400] dark:text-[#111111] font-bold shadow-sm scale-105',
+    pill: 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 dark:bg-[#2E2405] dark:text-[#FFC400] dark:border-[#FFC400]/30 dark:hover:bg-[#FFC400]/20',
+  },
+  tag: {
+    Icon: TagIcon,
+    nameClass: '',
+    icon: 'text-emerald-700 dark:text-[#34D399]',
+    hovered:
+      'bg-emerald-50/80 dark:bg-[#0A261B] border-emerald-400 dark:border-[#34D399]/60 shadow-[0_0_12px_rgba(52,211,153,0.25)]',
+    idle: 'bg-[var(--surface-2)] border-[var(--border)] hover:border-emerald-400/50',
+    pillActive:
+      'bg-emerald-500 text-white dark:bg-[#34D399] dark:text-[#052216] font-bold shadow-sm scale-105',
+    pill: 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200 dark:bg-[#0A261B] dark:text-[#34D399] dark:border-[#34D399]/30 dark:hover:bg-[#34D399]/20',
+  },
+};
+
+interface EntityCardProps {
+  kind: keyof typeof KINDS;
+  entityId: string;
+  name: string;
+  ranges: TimeRange[];
+  thumb?: React.ReactNode;
+  currentTimestamp: number;
+  onSeek: (ts: number) => void;
+  hoveredEntityId: string | null;
+  onHoverEntity: (id: string | null) => void;
+  selectedEntityIds: string[];
+  onToggleEntity: (id: string) => void;
+}
+
+/** A person, object or tag. Click picks it for the timeline; the chevron expands one seek pill per range. */
+const EntityCard: React.FC<EntityCardProps> = ({
+  kind,
+  entityId,
+  name,
+  ranges,
+  thumb,
+  currentTimestamp,
+  onSeek,
+  hoveredEntityId,
+  onHoverEntity,
+  selectedEntityIds,
+  onToggleEntity,
+}) => {
+  const [open, setOpen] = useState(false);
+  const k = KINDS[kind];
+  const selected = selectedEntityIds.includes(entityId);
+  const summary =
+    ranges.slice(0, 2).map(formatRange).join(', ') +
+    (ranges.length > 2 ? ` +${ranges.length - 2} more` : '');
+
+  return (
+    <div
+      onMouseEnter={() => onHoverEntity(entityId)}
+      onMouseLeave={() => onHoverEntity(null)}
+      className={`rounded-xl border transition-all flex flex-col ${
+        selected || hoveredEntityId === entityId ? k.hovered : k.idle
+      }`}
+    >
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => onToggleEntity(entityId)}
+          aria-pressed={selected}
+          title={selected ? 'Show everything on the timeline' : 'Show only this on the timeline'}
+          className="flex-1 min-w-0 p-2 flex items-center gap-2.5 text-left cursor-pointer"
+        >
+          <div
+            className={`relative w-9 h-9 shrink-0 rounded-lg overflow-hidden bg-[var(--surface-3)] flex items-center justify-center ${k.icon}`}
+          >
+            <k.Icon size={14} />
+            {thumb}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className={`text-xs font-medium text-[var(--text)] truncate ${k.nameClass}`}>
+              {name}
+            </div>
+            {ranges.length > 0 && (
+              <div className="text-[10px] font-mono text-[var(--text-muted)] truncate">
+                {summary}
+              </div>
+            )}
+          </div>
+        </button>
+        {ranges.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-label={open ? 'Hide ranges' : 'Show ranges'}
+            className="self-stretch px-2.5 rounded-r-xl text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]/60 cursor-pointer transition-colors"
+          >
+            <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+
+      {/* Seek pills, one per appearance range */}
+      {open && (
+        <div className="flex items-center gap-1.5 flex-wrap px-2.5 pb-2.5">
+          {ranges.map((r) => (
+            <button
+              key={r.start}
+              type="button"
+              onClick={() => onSeek(r.start)}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium transition-all cursor-pointer ${
+                inRange(r, currentTimestamp) ? k.pillActive : k.pill
+              }`}
+              title={`Seek to ${formatTime(r.start)}`}
+            >
+              {formatRange(r)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** The label's best-scoring box at `ts`, cropped square out of that second's frame. Nothing if there is none. */
+const ObjectThumb: React.FC<{
+  media: MediaDetail;
+  labelId: string;
+  ts: number;
+}> = ({ media, labelId, ts }) => {
+  const api = useMemo(() => getApi(), []);
+  const [failed, setFailed] = useState(false);
+  // Same key as MediaDetailView's detections query, so the two share the cache
+  const { data } = useQuery({
+    queryKey: ['mediaDetections', media.id, ts],
+    queryFn: () => api.getDetections(media.id, ts),
+  });
+  const best = data?.objects
+    .filter((o) => o.labelId === labelId)
+    .sort((a, b) => b.score - a.score)[0];
+  if (!best || failed || !media.width || !media.height) return null;
+
+  // In frame-height units the frame is aspect x 1. Square crop around the box with a little padding.
+  const aspect = media.width / media.height;
+  const { x, y, w, h } = best.box;
+  const side = Math.min(Math.max(w * aspect, h) * 1.25, aspect, 1);
+  const left = Math.max(0, Math.min((x + w / 2) * aspect - side / 2, aspect - side));
+  const top = Math.max(0, Math.min(y + h / 2 - side / 2, 1 - side));
+  return (
+    <img
+      src={`snapsort-media://frame/${media.id}/${ts}`}
+      alt=""
+      onError={() => setFailed(true)}
+      className="absolute max-w-none"
+      style={{
+        width: `${(aspect / side) * 100}%`,
+        height: `${(1 / side) * 100}%`,
+        left: `${(-left / side) * 100}%`,
+        top: `${(-top / side) * 100}%`,
+      }}
+    />
+  );
+};
+
+/** Middle second of the longest range: a frame where the label is on screen. 0 for images. */
+function representativeTs(ranges: TimeRange[]): number {
+  if (ranges.length === 0) return 0;
+  const longest = ranges.reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a));
+  return Math.floor((longest.start + longest.end) / 2);
 }
 
 export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
@@ -48,10 +251,20 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
   onSeek,
   hoveredEntityId,
   onHoverEntity,
+  selectedEntityIds,
+  onToggleEntity,
   activeTab,
   onTabChange,
 }) => {
   const isVideo = media.kind === 'video';
+  const cardProps = {
+    currentTimestamp,
+    onSeek,
+    hoveredEntityId,
+    onHoverEntity,
+    selectedEntityIds,
+    onToggleEntity,
+  };
 
   // Aggregate all timeline cues sorted chronologically
   const chronologicalCues = useMemo(() => {
@@ -75,13 +288,19 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
 
     (media.people || []).forEach((p) => {
       (p.timestamps || []).forEach((ts) => {
-        getOrCreate(ts).people.push({ id: p.id, name: p.name || `Person ${p.id}` });
+        getOrCreate(ts).people.push({
+          id: p.id,
+          name: p.name || `Person ${p.id}`,
+        });
       });
     });
 
     (media.labels || []).forEach((l) => {
       (l.timestamps || []).forEach((ts) => {
-        getOrCreate(ts).objects.push({ labelId: l.labelId, name: l.name || l.labelId });
+        getOrCreate(ts).objects.push({
+          labelId: l.labelId,
+          name: l.name || l.labelId,
+        });
       });
     });
 
@@ -104,7 +323,8 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
               {media.name}
             </h3>
             <span className="text-[11px] text-[var(--text-muted)] font-mono">
-              {media.width} × {media.height} · {isVideo ? `${formatTime(media.durationS || 0)}` : 'Image'}
+              {media.width} × {media.height} ·{' '}
+              {isVideo ? `${formatTime(media.durationS || 0)}` : 'Image'}
             </span>
           </div>
 
@@ -142,13 +362,19 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
           >
             <Calendar size={12} className="text-[var(--text-muted)] shrink-0" />
             <span className="truncate">
-              {media.capturedAt ? formatWhen(media.capturedAt) : `Added ${formatWhen(media.addedAt, true)}`}
+              {media.capturedAt
+                ? formatWhen(media.capturedAt)
+                : `Added ${formatWhen(media.addedAt, true)}`}
             </span>
           </div>
 
           {(media.camera || media.sizeBytes || media.fps) && (
             <div className="truncate col-span-2 font-mono">
-              {[media.camera, media.fps ? `${Math.round(media.fps)} fps` : null, media.sizeBytes ? formatBytes(media.sizeBytes) : null]
+              {[
+                media.camera,
+                media.fps ? `${Math.round(media.fps)} fps` : null,
+                media.sizeBytes ? formatBytes(media.sizeBytes) : null,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </div>
@@ -198,59 +424,24 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
                   <User size={13} />
                   <span>Persons ({media.people?.length || 0})</span>
                 </div>
-                <span className="text-[10px] text-[var(--text-muted)] opacity-70">Cyan markers</span>
+                <span className="text-[10px] text-[var(--text-muted)] opacity-70">
+                  Cyan markers
+                </span>
               </div>
 
               {media.people && media.people.length > 0 ? (
                 <div className="space-y-2">
-                  {media.people.map((person) => {
-                    const entityId = `person-${person.id}`;
-                    const isHovered = hoveredEntityId === entityId;
-
-                    return (
-                      <div
-                        key={person.id}
-                        onMouseEnter={() => onHoverEntity(entityId)}
-                        onMouseLeave={() => onHoverEntity(null)}
-                        className={`p-2.5 rounded-xl border transition-all ${
-                          isHovered
-                            ? 'bg-sky-50/80 dark:bg-[#0E273C] border-sky-400 dark:border-[#38BDF8]/60 shadow-[0_0_12px_rgba(56,189,248,0.25)]'
-                            : 'bg-[var(--surface-2)] border-[var(--border)] hover:border-sky-400/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-[var(--text)]">
-                            {person.name || 'Unnamed person'}
-                          </span>
-                        </div>
-
-                        {/* Timestamp Seek Pills for Video */}
-                        {isVideo && person.timestamps && person.timestamps.length > 0 && (
-                          <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                            <span className="text-[10px] text-[var(--text-muted)] mr-0.5">Appears:</span>
-                            {person.timestamps.map((ts) => {
-                              const isActive = Math.abs(ts - currentTimestamp) <= 1;
-                              return (
-                                <button
-                                  key={ts}
-                                  type="button"
-                                  onClick={() => onSeek(ts)}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium transition-all cursor-pointer ${
-                                    isActive
-                                      ? 'bg-sky-500 text-white dark:bg-[#38BDF8] dark:text-[#0A1A28] font-bold shadow-sm scale-105'
-                                      : 'bg-sky-100 text-sky-800 border border-sky-300 hover:bg-sky-200 dark:bg-[#0A1A28] dark:text-[#38BDF8] dark:border-[#38BDF8]/30 dark:hover:bg-[#38BDF8]/20'
-                                  }`}
-                                  title={`Seek to ${formatTime(ts)}`}
-                                >
-                                  {formatTime(ts)}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {media.people.map((person) => (
+                    <EntityCard
+                      key={`${media.id}-${person.id}`}
+                      kind="person"
+                      entityId={`person-${person.id}`}
+                      name={person.name || 'Unnamed person'}
+                      ranges={isVideo ? toRanges(person.timestamps) : []}
+                      thumb={<FaceImage src={`snapsort-media://face/${person.id}`} />}
+                      {...cardProps}
+                    />
+                  ))}
                 </div>
               ) : (
                 <div className="text-xs text-[var(--text-muted)] italic p-3 bg-[var(--surface-2)] rounded-xl border border-[var(--border)]">
@@ -266,60 +457,31 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
                   <Box size={13} />
                   <span>Objects ({media.labels?.length || 0})</span>
                 </div>
-                <span className="text-[10px] text-[var(--text-muted)] opacity-70">Amber markers</span>
+                <span className="text-[10px] text-[var(--text-muted)] opacity-70">
+                  Amber markers
+                </span>
               </div>
 
               {media.labels && media.labels.length > 0 ? (
                 <div className="space-y-2">
                   {media.labels.map((label, idx) => {
-                    const entityId = `object-${label.labelId}`;
-                    const isHovered = hoveredEntityId === entityId;
-
+                    const ranges = isVideo ? toRanges(label.timestamps) : [];
                     return (
-                      <div
-                        key={`${label.labelId}-${idx}`}
-                        onMouseEnter={() => onHoverEntity(entityId)}
-                        onMouseLeave={() => onHoverEntity(null)}
-                        className={`p-2.5 rounded-xl border transition-all ${
-                          isHovered
-                            ? 'bg-amber-50/80 dark:bg-[#2E2405] border-amber-400 dark:border-[#FFC400]/60 shadow-[0_0_12px_rgba(255,196,0,0.25)]'
-                            : 'bg-[var(--surface-2)] border-[var(--border)] hover:border-amber-400/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-[var(--text)] capitalize">
-                            {label.name || label.labelId}
-                          </span>
-                          <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                            {label.module}
-                          </span>
-                        </div>
-
-                        {/* Timestamp Seek Pills for Video */}
-                        {isVideo && label.timestamps && label.timestamps.length > 0 && (
-                          <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                            <span className="text-[10px] text-[var(--text-muted)] mr-0.5">Appears:</span>
-                            {label.timestamps.map((ts) => {
-                              const isActive = Math.abs(ts - currentTimestamp) <= 1;
-                              return (
-                                <button
-                                  key={ts}
-                                  type="button"
-                                  onClick={() => onSeek(ts)}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium transition-all cursor-pointer ${
-                                    isActive
-                                      ? 'bg-amber-500 text-white dark:bg-[#FFC400] dark:text-[#111111] font-bold shadow-sm scale-105'
-                                      : 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 dark:bg-[#2E2405] dark:text-[#FFC400] dark:border-[#FFC400]/30 dark:hover:bg-[#FFC400]/20'
-                                  }`}
-                                  title={`Seek to ${formatTime(ts)}`}
-                                >
-                                  {formatTime(ts)}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      <EntityCard
+                        key={`${media.id}-${label.labelId}-${idx}`}
+                        kind="object"
+                        entityId={`object-${label.labelId}`}
+                        name={label.name || label.labelId}
+                        ranges={ranges}
+                        thumb={
+                          <ObjectThumb
+                            media={media}
+                            labelId={label.labelId}
+                            ts={representativeTs(ranges)}
+                          />
+                        }
+                        {...cardProps}
+                      />
                     );
                   })}
                 </div>
@@ -337,58 +499,23 @@ export const MediaDetailsInspector: React.FC<MediaDetailsInspectorProps> = ({
                   <TagIcon size={13} />
                   <span>Tags & Scenes ({media.tags?.length || 0})</span>
                 </div>
-                <span className="text-[10px] text-[var(--text-muted)] opacity-70">Emerald markers</span>
+                <span className="text-[10px] text-[var(--text-muted)] opacity-70">
+                  Emerald markers
+                </span>
               </div>
 
               {media.tags && media.tags.length > 0 ? (
                 <div className="space-y-2">
-                  {media.tags.map((tag) => {
-                    const entityId = `tag-${tag.id}`;
-                    const isHovered = hoveredEntityId === entityId;
-
-                    return (
-                      <div
-                        key={tag.id}
-                        onMouseEnter={() => onHoverEntity(entityId)}
-                        onMouseLeave={() => onHoverEntity(null)}
-                        className={`p-2.5 rounded-xl border transition-all ${
-                          isHovered
-                            ? 'bg-emerald-50/80 dark:bg-[#0A261B] border-emerald-400 dark:border-[#34D399]/60 shadow-[0_0_12px_rgba(52,211,153,0.25)]'
-                            : 'bg-[var(--surface-2)] border-[var(--border)] hover:border-emerald-400/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-[var(--text)]">{tag.name}</span>
-                          <span className="text-[10px] text-emerald-700 dark:text-[#34D399] font-mono">Tag</span>
-                        </div>
-
-                        {/* Timestamp Seek Pills for Video */}
-                        {isVideo && tag.timestamps && tag.timestamps.length > 0 && (
-                          <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                            <span className="text-[10px] text-[var(--text-muted)] mr-0.5">Appears:</span>
-                            {tag.timestamps.map((ts) => {
-                              const isActive = Math.abs(ts - currentTimestamp) <= 1;
-                              return (
-                                <button
-                                  key={ts}
-                                  type="button"
-                                  onClick={() => onSeek(ts)}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium transition-all cursor-pointer ${
-                                    isActive
-                                      ? 'bg-emerald-500 text-white dark:bg-[#34D399] dark:text-[#052216] font-bold shadow-sm scale-105'
-                                      : 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200 dark:bg-[#0A261B] dark:text-[#34D399] dark:border-[#34D399]/30 dark:hover:bg-[#34D399]/20'
-                                  }`}
-                                  title={`Seek to ${formatTime(ts)}`}
-                                >
-                                  {formatTime(ts)}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {media.tags.map((tag) => (
+                    <EntityCard
+                      key={`${media.id}-${tag.id}`}
+                      kind="tag"
+                      entityId={`tag-${tag.id}`}
+                      name={tag.name}
+                      ranges={isVideo ? toRanges(tag.timestamps) : []}
+                      {...cardProps}
+                    />
+                  ))}
                 </div>
               ) : (
                 <div className="text-xs text-[var(--text-muted)] italic p-3 bg-[var(--surface-2)] rounded-xl border border-[var(--border)]">
