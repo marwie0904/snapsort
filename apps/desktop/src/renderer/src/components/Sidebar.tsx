@@ -7,7 +7,8 @@ import {
   PanelLeftClose,
   Users,
   Clapperboard,
-  Tag,
+  Box,
+  MapPin,
   HelpCircle,
 } from 'lucide-react';
 import { Wordmark, ThemeSegmentedControl } from '@snapsort/ui';
@@ -110,6 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     navigateToPeople,
     navigateToScenes,
     navigateToTags,
+    navigateToPlaces,
     navigateToLibrary,
     themePreference,
     effectiveTheme,
@@ -253,14 +255,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                 />
                 <SidebarNavItem
-                  icon={Tag}
-                  label="Tags"
+                  icon={Box}
+                  label="Objects"
                   count={counts.objects}
                   active={currentView === 'tags' && !selectedFolderId}
                   activeFilterCount={getFacetSelection('label').ids.length}
                   onClick={() => {
                     clearSelectedFolder();
                     navigateToTags();
+                  }}
+                />
+                <SidebarNavItem
+                  icon={MapPin}
+                  label="Places"
+                  count={counts.places}
+                  active={currentView === 'places' && !selectedFolderId}
+                  activeFilterCount={getFacetSelection('place').ids.length}
+                  onClick={() => {
+                    clearSelectedFolder();
+                    navigateToPlaces();
                   }}
                 />
               </div>

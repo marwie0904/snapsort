@@ -68,7 +68,7 @@ interface UiState {
   aiPanelOpen: boolean;
 
   // View navigation
-  currentView: 'library' | 'people' | 'person-detail' | 'media-detail' | 'scenes' | 'tags';
+  currentView: 'library' | 'people' | 'person-detail' | 'media-detail' | 'scenes' | 'tags' | 'places';
   selectedPersonId: number | null;
   selectedMediaId: number | null;
   currentMediaTimestamp: number;
@@ -92,6 +92,7 @@ interface UiState {
   navigateToPeople: () => void;
   navigateToScenes: () => void;
   navigateToTags: () => void;
+  navigateToPlaces: () => void;
   navigateToPersonDetail: (id: number) => void;
   navigateToLibrary: () => void;
   setPersonName: (id: number, name: string) => void;
@@ -249,6 +250,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   navigateToTags: () =>
     set({
       currentView: 'tags',
+      selectedPersonId: null,
+    }),
+
+  navigateToPlaces: () =>
+    set({
+      currentView: 'places',
       selectedPersonId: null,
     }),
 

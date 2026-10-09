@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Tag } from 'lucide-react';
+import { Box } from 'lucide-react';
 import { MockSnapsortApi } from '@snapsort/mock';
 import { FacetCardGrid } from './FacetCardGrid';
 
@@ -33,12 +33,12 @@ export const TagsView: React.FC = () => {
   return (
     <FacetCardGrid
       kind="label"
-      title="Tags & Objects"
-      subtitle="Detected visual elements, outfits, and wedding accessories. Click any tag to isolate it in the library."
-      icon={Tag}
+      title="Objects"
+      subtitle="Objects detected in your footage. Click one to filter the library."
+      icon={Box}
       items={tags}
       isLoading={isLoading}
-      emptyMessage="No tags detected yet. Run ingest to analyze footage."
+      emptyMessage="No objects detected yet. Run ingest to analyze footage."
       defaultMatch="all"
     />
   );

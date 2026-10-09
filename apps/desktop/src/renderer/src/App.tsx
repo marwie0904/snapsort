@@ -10,6 +10,7 @@ import { AskAiPanel } from './components/AskAiPanel';
 import { PeopleView } from './components/PeopleView';
 import { ScenesView } from './components/ScenesView';
 import { TagsView } from './components/TagsView';
+import { PlacesView } from './components/PlacesView';
 import { PersonDetailView } from './components/PersonDetailView';
 import { MediaDetailView } from './components/MediaDetailView';
 import { WelcomeModal } from './components/WelcomeModal';
@@ -194,6 +195,10 @@ export const App: React.FC = () => {
         ) : currentView === 'tags' ? (
           <div className="flex-1 overflow-hidden flex flex-col pt-2">
             <TagsView />
+          </div>
+        ) : currentView === 'places' ? (
+          <div className="flex-1 overflow-hidden flex flex-col pt-2">
+            <PlacesView />
           </div>
         ) : currentView === 'person-detail' && selectedPersonId !== null ? (
           <div className="flex-1 overflow-hidden flex flex-col pt-2">
