@@ -43,7 +43,7 @@ uv run snapsort search "people near a bus" --limit 10
 uv run snapsort ingest photos --modules example                 # template module only
 ```
 
-`objects` writes one result per detection (label, score, normalized bbox). `clip_embed` stores one L2-normalized vector per frame. `snapsort search` encodes the query as "this is a photo of {query}." with the same SigLIP 2 model and ranks by match probability (0-1) against stored vectors (requires a prior `clip_embed` ingest).
+`objects` writes one result per detection (label, score, normalized bbox). `clip_embed` stores one L2-normalized vector per frame. `snapsort search` encodes the query as "this is a photo of {query}." with the same SigLIP 2 model and ranks by match probability (0-1) against stored vectors, keeping frames at or above `--min-score` (requires a prior `clip_embed` ingest). The text stacks with the filter flags (`--person`, `--place`, `--kind`, `--from`/`--to`, `--or`); see `snapsort search --help`.
 
 Results go to `.snapsort/` in the current directory: `snapsort.db` (SQLite: `media`, `frames`, `results`, `runs`) and `frames/` (extracted video frames). Delete `.snapsort/` to start over. First run of YOLO/SigLIP downloads model weights.
 

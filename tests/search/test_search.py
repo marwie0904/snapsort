@@ -1,0 +1,733 @@
+"""Search tests. Rows go straight into a temp database, so no model runs."""
+import itertools
+import json
+import re
+
+import numpy as np
+import pytest
+
+import snapsort.cli as cli
+from snapsort.group import SCHEMA as GROUP_SCHEMA
+from snapsort.ingest import connect
+from snapsort.search import QueryError, Segment, list_people, open_db, search, segments
+
+_names = itertools.count()
+
+
+@pytest.fixture
+def db(data_dir):
+    """A grouped library: ingest's tables plus the persons tables."""
+    data_dir.mkdir()
+    conn = open_db(data_dir)
+    conn.executescript(GROUP_SCHEMA)
+    yield conn
+    conn.close()
+
+
+def media(conn, kind, frames=1, name=None, added_at="2026-10-09 10:00:00") -> tuple[int, list[int]]:
+    """One file with `frames` frames at ts 0, 1, 2... (ts None for an image). Returns (media id, frame ids)."""
+    with conn:
+        mid = conn.execute("INSERT INTO media (path, kind, added_at) VALUES (?, ?, ?)",
+                           (f"/lib/{name or next(_names)}", kind, added_at)).lastrowid
+        fids = [conn.execute("INSERT INTO frames (media_id, idx, ts, path) VALUES (?, ?, ?, '/f.jpg')",
+                             (mid, i, None if kind == "image" else float(i))).lastrowid for i in range(frames)]
+    return mid, fids
+
+
+def add_faces(conn, person_id, frame_ids):
+    """One face of the person in each frame."""
+    with conn:
+        for fid in frame_ids:
+            rid = conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'faces', 'face')",
+                               (fid,)).lastrowid
+            conn.execute("INSERT INTO person_faces (result_id, person_id, score) VALUES (?, ?, 1.0)",
+                         (rid, person_id))
+
+
+def person(conn, frame_ids) -> int:
+    """A new person with one face in each frame. Returns the person id."""
+    with conn:
+        pid = conn.execute("INSERT INTO persons DEFAULT VALUES").lastrowid
+    add_faces(conn, pid, frame_ids)
+    return pid
+
+
+def place(conn, frame_id, label):
+    """A location result as ingest stores it: label already lowercased, or None."""
+    with conn:
+        conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'location', ?)", (frame_id, label))
+
+
+def checked(conn, media_id):
+    """A capture_date run, which ingest records whether or not the file had a date."""
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO runs (media_id, module, version, status) "
+                     "VALUES (?, 'capture_date', '1', 'done')", (media_id,))
+
+
+def captured(conn, frame_id, when):
+    """A capture_date result as the module stores it (local time 'YYYY-MM-DD HH:MM:SS'), plus its run."""
+    with conn:
+        conn.execute("INSERT INTO results (frame_id, module, label) VALUES (?, 'capture_date', ?)", (frame_id, when))
+    checked(conn, conn.execute("SELECT media_id FROM frames WHERE id = ?", (frame_id,)).fetchone()[0])
+
+
+def ts_of(hit):
+    return [t for t, _ in hit.matches]
+
+
+def test_no_filters_returns_every_file(db):
+    a, _ = media(db, "image")
+    b, _ = media(db, "video", frames=3)
+    hits = search(db, [])
+    assert {h.media_id for h in hits} == {a, b}
+    video = next(h for h in hits if h.media_id == b)
+    assert ts_of(video) == [0.0, 1.0, 2.0] and video.score is None
+
+
+def test_empty_library_returns_nothing(db):
+    assert search(db, []) == []
+
+
+def test_person_all_means_the_same_file_by_default(db):
+    _, f = media(db, "video", frames=6)
+    _, g = media(db, "video", frames=2)
+    anna, ben = person(db, [f[1], g[0]]), person(db, [f[5]])
+    both = {"kind": "person", "ids": [anna, ben], "match": "all"}
+    [hit] = search(db, [both])
+    assert ts_of(hit) == [1.0, 5.0]
+    assert search(db, [both], scope="frame") == []
+    either = search(db, [{"kind": "person", "ids": [anna, ben], "match": "any"}])
+    assert sorted(ts_of(h) for h in either) == [[0.0], [1.0, 5.0]]
+
+
+def test_same_frame_keeps_only_shared_frames(db):
+    _, f = media(db, "video", frames=4)
+    anna, ben = person(db, [f[1], f[2]]), person(db, [f[2], f[3]])
+    both = {"kind": "person", "ids": [anna, ben], "match": "all"}
+    [hit] = search(db, [both])
+    assert ts_of(hit) == [1.0, 2.0, 3.0]
+    [hit] = search(db, [both], scope="frame")
+    assert ts_of(hit) == [2.0]
+
+
+def test_separate_filters_follow_the_scope_too(db):
+    _, f = media(db, "video", frames=6)
+    anna, ben = person(db, [f[1]]), person(db, [f[5]])
+    filters = [{"kind": "person", "ids": [anna], "match": "all"}, {"kind": "person", "ids": [ben], "match": "all"}]
+    [hit] = search(db, filters)
+    assert ts_of(hit) == [1.0, 5.0]
+    assert search(db, filters, scope="frame") == []
+
+
+def test_or_matches_any_filter(db):
+    tokyo, f = media(db, "video", frames=3)
+    place(db, f[0], "tokyo, japan")
+    with_anna, g = media(db, "video", frames=3)
+    anna = person(db, [g[2]])
+    both, h = media(db, "video", frames=3)
+    place(db, h[0], "tokyo, japan")
+    add_faces(db, anna, [h[1]])
+    media(db, "image")  # neither
+    hits = {h.media_id: ts_of(h) for h in search(
+        db, [{"kind": "place", "name": "tokyo, japan"}, {"kind": "person", "ids": [anna], "match": "all"}],
+        combine="any")}
+    # a whole-file match marks every frame; a person match marks the person's frames
+    assert hits == {tokyo: [0.0, 1.0, 2.0], with_anna: [2.0], both: [1.0]}
+
+
+def test_same_frame_with_whole_file_filters(db):
+    mid, f = media(db, "video", frames=3)
+    place(db, f[0], "tokyo, japan")
+    anna = person(db, [f[2]])
+    tokyo = {"kind": "place", "name": "tokyo, japan"}
+    [hit] = search(db, [tokyo, {"kind": "person", "ids": [anna], "match": "all"}], scope="frame")
+    assert ts_of(hit) == [2.0]  # a whole-file filter doesn't narrow the frames
+    [hit] = search(db, [tokyo, {"kind": "mediaKind", "value": "video"}], scope="frame")
+    assert hit.media_id == mid and ts_of(hit) == [0.0, 1.0, 2.0]  # only whole-file filters: every frame
+
+
+def test_or_with_same_frame(db):
+    _, f = media(db, "video", frames=3)  # anna and ben, never in one frame
+    together, g = media(db, "video", frames=3)
+    image, _ = media(db, "image")
+    anna, ben = person(db, [f[0], g[1]]), person(db, [f[2], g[1]])
+    hits = {h.media_id: ts_of(h) for h in search(
+        db, [{"kind": "person", "ids": [anna, ben], "match": "all"}, {"kind": "mediaKind", "value": "image"}],
+        combine="any", scope="frame")}
+    assert hits == {together: [1.0], image: []}
+
+
+def test_place_covers_every_frame_and_ignores_case(db):
+    mid, f = media(db, "video", frames=3)
+    media(db, "image")  # no location
+    place(db, f[0], "são paulo, brazil")
+    [hit] = search(db, [{"kind": "place", "name": "  São Paulo, Brazil "}])
+    assert hit.media_id == mid and ts_of(hit) == [0.0, 1.0, 2.0]
+
+
+def test_place_and_person_keep_only_the_persons_frames(db):
+    mid, f = media(db, "video", frames=5)
+    place(db, f[0], "tokyo, japan")
+    anna = person(db, [f[3], f[4]])
+    _, g = media(db, "video", frames=2)
+    add_faces(db, anna, g)  # anna in another video, not in tokyo
+    [hit] = search(db, [{"kind": "place", "name": "tokyo, japan"},
+                        {"kind": "person", "ids": [anna], "match": "all"}])
+    assert hit.media_id == mid and ts_of(hit) == [3.0, 4.0]
+
+
+def test_media_kind(db):
+    a, _ = media(db, "image")
+    b, _ = media(db, "video", frames=2)
+    assert [h.media_id for h in search(db, [{"kind": "mediaKind", "value": "image"}])] == [a]
+    assert [h.media_id for h in search(db, [{"kind": "mediaKind", "value": "video"}])] == [b]
+
+
+def test_date_range_includes_both_days(db):
+    ids = {}
+    for day in ("2026-07-14", "2026-07-15", "2026-07-31", "2026-08-01"):
+        mid, [fid] = media(db, "image")
+        captured(db, fid, f"{day} 23:59:59")
+        ids[day] = mid
+    undated, _ = media(db, "image")
+    checked(db, undated)  # checked, no capture date: never matches
+
+    def found(lo, hi):
+        return {h.media_id for h in search(db, [{"kind": "date", "from": lo, "to": hi}])}
+
+    assert found("2026-07-15", "2026-07-31") == {ids["2026-07-15"], ids["2026-07-31"]}
+    assert found("2026-07-15", None) == {ids["2026-07-15"], ids["2026-07-31"], ids["2026-08-01"]}
+    assert found(None, "2026-07-14") == {ids["2026-07-14"]}
+    assert found("2026-09-01", None) == set()
+
+
+def test_date_filter_reports_files_never_checked(db):
+    media(db, "image")  # ingested before capture_date existed: no run
+    _, [f] = media(db, "image")
+    captured(db, f, "2026-07-15 10:00:00")
+    with pytest.raises(QueryError, match=re.escape(
+            "1 of 2 files were never checked for a capture date. "
+            "run snapsort ingest --modules capture_date on their folders")):
+        search(db, [{"kind": "date", "from": "2026-07-01"}])
+
+
+def test_date_filter_on_checked_files_without_dates_is_empty(db):
+    mid, _ = media(db, "image")
+    checked(db, mid)
+    assert search(db, [{"kind": "date", "from": "2026-07-01"}]) == []
+
+
+def test_date_matches_the_whole_video(db):
+    vid, f = media(db, "video", frames=3)
+    captured(db, f[0], "2026-07-15 15:13:55")
+    [hit] = search(db, [{"kind": "date", "from": "2026-07-15"}])
+    assert hit.media_id == vid and ts_of(hit) == [0.0, 1.0, 2.0]
+    assert hit.captured_at == "2026-07-15 15:13:55"
+
+
+def test_date_stacks_with_person(db):
+    july, f = media(db, "video", frames=3)
+    captured(db, f[0], "2026-07-15 10:00:00")
+    august, [g] = media(db, "image")
+    captured(db, g, "2026-08-02 10:00:00")
+    anna = person(db, [f[2], g])
+    filters = [{"kind": "date", "from": "2026-07-01", "to": "2026-07-31"},
+               {"kind": "person", "ids": [anna], "match": "all"}]
+    [hit] = search(db, filters)
+    assert hit.media_id == july and ts_of(hit) == [2.0]  # the person's frame, not the whole video
+    [hit] = search(db, filters, scope="frame")
+    assert ts_of(hit) == [2.0]  # a whole-file filter doesn't narrow the frames
+    assert {h.media_id for h in search(db, filters, combine="any")} == {july, august}
+
+
+def test_newest_and_oldest_use_capture_time(db):
+    old, [f] = media(db, "image", added_at="2026-10-09 12:00:00")
+    captured(db, f, "2020-01-01 00:00:00")
+    new, [g] = media(db, "image", added_at="2026-10-09 10:00:00")
+    captured(db, g, "2026-07-15 10:00:00")
+    undated, _ = media(db, "image", added_at="2026-10-09 11:00:00")  # falls back to added_at
+    hits = search(db, [], sort="newest")
+    assert [h.media_id for h in hits] == [undated, new, old]
+    assert [h.captured_at for h in hits] == [None, "2026-07-15 10:00:00", "2020-01-01 00:00:00"]
+    assert [h.media_id for h in search(db, [], sort="oldest")] == [old, new, undated]
+
+
+def test_image_hit_has_no_timeline(db):
+    _, f = media(db, "image")
+    person(db, f)
+    [hit] = search(db, [])
+    assert (hit.matches, hit.segments, hit.best_ts, hit.score) == ([], [], None, None)
+
+
+def test_video_segments_and_best_ts_without_scores(db):
+    _, f = media(db, "video", frames=11)
+    anna = person(db, [f[i] for i in (1, 2, 3, 5, 6, 10)])
+    [hit] = search(db, [{"kind": "person", "ids": [anna], "match": "all"}])
+    assert hit.segments == [Segment(1.0, 6.0, None), Segment(10.0, 10.0, None)]
+    assert hit.best_ts == 1.0
+
+
+def test_segments_bridge_one_missed_frame():
+    m = [(1.0, 0.5), (2.0, 0.9), (3.0, 0.6), (5.0, None), (6.0, 0.7), (10.0, 0.8)]
+    assert segments(m) == [Segment(1.0, 6.0, 0.9), Segment(10.0, 10.0, 0.8)]
+    assert segments(m, gap=1.0) == [Segment(1.0, 3.0, 0.9), Segment(5.0, 6.0, 0.7), Segment(10.0, 10.0, 0.8)]
+    assert segments([(0.0, None), (3.0, None)]) == [Segment(0.0, 0.0, None), Segment(3.0, 3.0, None)]
+    assert segments([]) == []
+
+
+def test_sorts_and_limit(db):
+    old, _ = media(db, "image", name="b.jpg", added_at="2026-10-01 09:00:00")
+    new, _ = media(db, "image", name="a.jpg", added_at="2026-10-09 09:00:00")
+    tie, _ = media(db, "image", name="C.jpg", added_at="2026-10-09 09:00:00")
+
+    def ids(**kw):
+        return [h.media_id for h in search(db, [], **kw)]
+
+    assert ids() == [tie, new, old]  # newest by default; same second: the later insert first
+    assert ids(sort="oldest") == [old, new, tie]
+    assert ids(sort="name") == [new, old, tie]  # a, b, C ignoring case
+    assert ids(limit=2) == [tie, new]
+
+
+@pytest.mark.parametrize("filters, message", [
+    ([{"kind": "person", "ids": [], "match": "all"}], "at least one id"),
+    ([{"kind": "person", "ids": [999], "match": "all"}], "unknown person id(s): 999. see snapsort people"),
+    ([{"kind": "person", "ids": ["1"], "match": "all"}], "person ids must be integers"),
+    ([{"kind": "person", "ids": [1], "match": "some"}], "person match must be all or any"),
+    ([{"kind": "place", "name": "atlantis"}], "no media at place 'atlantis'. see snapsort places"),
+    ([{"kind": "mediaKind", "value": "gif"}], "mediaKind must be image or video"),
+    ([{"kind": "date"}], "date filter needs from or to"),
+    ([{"kind": "date", "from": "2026-7-1"}], "date must be YYYY-MM-DD, got '2026-7-1'"),
+    ([{"kind": "date", "to": "2026-02-30"}], "date must be YYYY-MM-DD, got '2026-02-30'"),
+    ([{"kind": "date", "from": "2026-08-01", "to": "2026-07-01"}],
+     "date range starts after it ends: 2026-08-01 > 2026-07-01"),
+    ([{"kind": "date", "from": "2026-07-01"}],
+     "1 of 1 files were never checked for a capture date. run snapsort ingest --modules capture_date"),
+    ([{"kind": "label", "module": "objects", "labelId": "dog"}], "unsupported filter kind: 'label'"),
+    ([{"kind": "folder", "id": 1}], "unsupported filter kind: 'folder'"),
+])
+def test_filter_errors(db, filters, message):
+    _, f = media(db, "image")
+    person(db, f)  # person 1 exists
+    with pytest.raises(QueryError, match=re.escape(message)):
+        search(db, filters)
+
+
+@pytest.mark.parametrize("kwargs, message", [
+    ({"sort": "similarity"}, "sort by similarity needs a similar image"),
+    ({"sort": "size"}, "unknown sort 'size'"),
+    ({"limit": 0}, "limit must be at least 1"),
+    ({"combine": "xor"}, "combine must be all or any, got 'xor'"),
+    ({"scope": "scene"}, "scope must be file or frame, got 'scene'"),
+])
+def test_option_errors(db, kwargs, message):
+    with pytest.raises(QueryError, match=re.escape(message)):
+        search(db, [], **kwargs)
+
+
+def test_library_never_grouped_reports_unknown_person(data_dir):
+    data_dir.mkdir()
+    connect(data_dir / "snapsort.db").close()  # ingest's tables only, no persons table
+    conn = open_db(data_dir)
+    try:
+        with pytest.raises(QueryError, match="unknown person id"):
+            search(conn, [{"kind": "person", "ids": [1], "match": "all"}])
+    finally:
+        conn.close()
+
+
+def test_read_does_not_wait_on_a_running_ingest(data_dir):
+    data_dir.mkdir()
+    writer = connect(data_dir / "snapsort.db")  # never grouped
+    writer.execute("BEGIN IMMEDIATE")  # ingest holds the write lock while it extracts frames
+    writer.execute("INSERT INTO media (path, kind) VALUES ('/lib/x.mov', 'video')")
+    conn = open_db(data_dir)
+    try:
+        assert search(conn, [{"kind": "mediaKind", "value": "video"}]) == []
+        assert list_people(conn) == []
+    finally:
+        conn.close()
+        writer.rollback()
+        writer.close()
+
+
+def unit(v):
+    return v / np.linalg.norm(v)
+
+
+def near(base, cos, rng):
+    """A unit vector at exactly `cos` to the unit vector `base`."""
+    u = rng.normal(size=base.size)
+    u -= (u @ base) * base
+    return cos * base + np.sqrt(1 - cos ** 2) * unit(u)
+
+
+def embed(conn, frame_id, v, module="image_embed"):
+    with conn:
+        conn.execute("INSERT INTO results (frame_id, module, vector) VALUES (?, ?, ?)",
+                     (frame_id, module, np.asarray(v, "<f4").tobytes()))
+
+
+@pytest.fixture
+def q():
+    return unit(np.random.default_rng(0).normal(size=64))
+
+
+@pytest.fixture
+def rng():
+    return np.random.default_rng(1)
+
+
+def test_similar_media_cuts_and_ranks(db, q, rng):
+    query, [fq] = media(db, "image")
+    close, [fc] = media(db, "image")
+    far, [ff] = media(db, "image")
+    embed(db, fq, q)
+    embed(db, fc, near(q, 0.8, rng))
+    embed(db, ff, near(q, 0.1, rng))
+    hits = search(db, [], {"mediaId": query}, min_score=0.5)
+    assert [h.media_id for h in hits] == [query, close]  # similarity is the default sort
+    assert [h.score for h in hits] == pytest.approx([1.0, 0.8], abs=1e-5)
+
+
+def test_similar_scores_video_frames(db, q, rng):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    vid, f = media(db, "video", frames=4)
+    for fid, cos in zip(f, (0.9, 0.2, 0.7, 0.3)):
+        embed(db, fid, near(q, cos, rng))
+    hit = next(h for h in search(db, [], {"mediaId": query}, min_score=0.5) if h.media_id == vid)
+    assert ts_of(hit) == [0.0, 2.0]
+    assert hit.score == pytest.approx(0.9, abs=1e-5) and hit.best_ts == 0.0
+    assert [(s.start, s.end) for s in hit.segments] == [(0.0, 2.0)]  # a 2 s step is bridged
+
+
+def test_similar_media_ts_picks_the_nearest_frame(db, rng):
+    vid, f = media(db, "video", frames=3)
+    for fid in f:
+        embed(db, fid, unit(rng.normal(size=64)))
+    [hit] = search(db, [], {"mediaId": vid, "ts": 2.2}, min_score=0.99)
+    assert ts_of(hit) == [2.0]
+    [hit] = search(db, [], {"mediaId": vid}, min_score=0.99)
+    assert ts_of(hit) == [0.0]  # no ts: frame 0
+
+
+def test_similar_skips_frames_without_a_vector(db, q):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    media(db, "image")  # never embedded
+    assert [h.media_id for h in search(db, [], {"mediaId": query}, min_score=0.0)] == [query]
+
+
+def test_similar_stacks_with_person(db, q, rng):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    vid, f = media(db, "video", frames=2)
+    embed(db, f[0], near(q, 0.9, rng))
+    embed(db, f[1], near(q, 0.8, rng))
+    anna = person(db, [f[1]])
+    with_anna = [{"kind": "person", "ids": [anna], "match": "all"}]
+    [hit] = search(db, with_anna, {"mediaId": query}, min_score=0.5)
+    assert hit.media_id == vid and ts_of(hit) == [0.0, 1.0]
+    assert hit.score == pytest.approx(0.9, abs=1e-5) and hit.best_ts == 0.0
+    [hit] = search(db, with_anna, {"mediaId": query}, min_score=0.5, scope="frame")
+    assert ts_of(hit) == [1.0] and hit.score == pytest.approx(0.8, abs=1e-5)
+
+
+def test_or_with_similar_sorts_unscored_files_last(db, q, rng):
+    query, [fq] = media(db, "image")
+    close, [fc] = media(db, "image")
+    with_anna, [fa] = media(db, "image")
+    embed(db, fq, q)
+    embed(db, fc, near(q, 0.8, rng))
+    embed(db, fa, near(q, 0.1, rng))
+    anna = person(db, [fa])
+    hits = search(db, [{"kind": "person", "ids": [anna], "match": "all"}], {"mediaId": query},
+                  min_score=0.5, combine="any")
+    assert [h.media_id for h in hits] == [query, close, with_anna]
+    assert hits[2].score is None
+
+
+def test_or_with_similar_marks_an_unscored_video_whole(db, q, rng):
+    query, [fq] = media(db, "image")
+    embed(db, fq, q)
+    vid, f = media(db, "video", frames=3)
+    for fid in f:
+        embed(db, fid, near(q, 0.1, rng))
+    place(db, f[0], "tokyo, japan")
+    hits = search(db, [{"kind": "place", "name": "tokyo, japan"}], {"mediaId": query}, min_score=0.5, combine="any")
+    assert [h.media_id for h in hits] == [query, vid]
+    assert (hits[1].score, ts_of(hits[1]), hits[1].best_ts) == (None, [0.0, 1.0, 2.0], 0.0)
+
+
+def test_similar_reads_candidates_in_chunks(db, q, rng, monkeypatch):
+    monkeypatch.setattr("snapsort.search.CHUNK", 1)
+    ids = []
+    for cos in (1.0, 0.9, 0.8):
+        mid, [fid] = media(db, "image")
+        embed(db, fid, near(q, cos, rng))
+        ids.append(mid)
+    hits = search(db, [{"kind": "mediaKind", "value": "image"}], {"mediaId": ids[0]}, min_score=0.5)
+    assert [h.media_id for h in hits] == ids
+
+
+@pytest.fixture
+def clip(monkeypatch, q):
+    """SigLIP stand-in: every text embeds to q and probability = cosine, so tests set scores with near()."""
+    from snapsort.modules.clip_embed import ClipEmbed
+    monkeypatch.setattr(ClipEmbed, "setup", lambda self: None)
+    monkeypatch.setattr(ClipEmbed, "embed_text", lambda self, texts: np.stack([q for _ in texts]))
+    monkeypatch.setattr(ClipEmbed, "match_probability", lambda self, s: s)
+
+
+def test_text_cuts_and_ranks(db, q, rng, clip):
+    a, [fa] = media(db, "image")
+    b, [fb] = media(db, "image")
+    c, [fc] = media(db, "image")
+    for fid, cos in ((fa, 0.9), (fb, 0.6), (fc, 0.1)):
+        embed(db, fid, near(q, cos, rng), "clip_embed")
+    hits = search(db, [], q="motorcycle", min_score=0.5)
+    assert [h.media_id for h in hits] == [a, b]  # relevance is the default sort
+    assert [h.score for h in hits] == pytest.approx([0.9, 0.6], abs=1e-5)
+
+
+def test_text_default_cutoff_is_text_min_score(db, q, rng, clip, monkeypatch):
+    monkeypatch.setattr("snapsort.search.TEXT_MIN_SCORE", 0.5)
+    a, [fa] = media(db, "image")
+    _, [fb] = media(db, "image")
+    embed(db, fa, near(q, 0.6, rng), "clip_embed")
+    embed(db, fb, near(q, 0.4, rng), "clip_embed")
+    assert [h.media_id for h in search(db, [], q="motorcycle")] == [a]
+
+
+def test_text_stacks_with_person(db, q, rng, clip):
+    _, f = media(db, "video", frames=3)
+    for fid, cos in zip(f, (0.9, 0.1, 0.8)):
+        embed(db, fid, near(q, cos, rng), "clip_embed")
+    anna = person(db, [f[2]])
+    with_anna = [{"kind": "person", "ids": [anna], "match": "all"}]
+    [hit] = search(db, with_anna, q="motorcycle", min_score=0.5)
+    assert ts_of(hit) == [0.0, 2.0] and hit.best_ts == 0.0
+    [hit] = search(db, with_anna, q="motorcycle", min_score=0.5, scope="frame")
+    assert ts_of(hit) == [2.0]
+
+
+def test_text_errors(db, q, clip, monkeypatch):
+    _, [f] = media(db, "image")
+    with pytest.raises(QueryError, match=re.escape(
+            "no clip_embed vectors in this library. run snapsort ingest --modules clip_embed")):
+        search(db, [], q="motorcycle")
+    embed(db, f, q, "clip_embed")
+    cases = [
+        ({"q": "  "}, "text query is empty"),
+        ({"q": "motorcycle", "similar": {"mediaId": 1}}, "use a text query or a similar image, not both"),
+        ({"sort": "relevance"}, "sort by relevance needs a text query"),
+    ]
+    for kwargs, message in cases:
+        with pytest.raises(QueryError, match=re.escape(message)):
+            search(db, [], **kwargs)
+    monkeypatch.setattr("snapsort.modules.clip_embed.ClipEmbed.embed_text",
+                        lambda self, texts: np.zeros((1, 32), "<f4"))
+    with pytest.raises(QueryError, match=re.escape(
+            "query has 32 dims but stored clip_embed vectors have 64. re-run snapsort ingest --modules clip_embed")):
+        search(db, [], q="motorcycle")
+
+
+def test_text_model_failure_is_a_query_error(db, q, monkeypatch):
+    from snapsort.modules.clip_embed import ClipEmbed
+
+    _, [f] = media(db, "image")
+    embed(db, f, q, "clip_embed")
+
+    def boom(self):
+        raise OSError("model not cached")
+
+    monkeypatch.setattr(ClipEmbed, "setup", boom)
+    with pytest.raises(QueryError, match="clip_embed model failed: OSError: model not cached"):
+        search(db, [], q="motorcycle")
+
+
+def test_similar_errors(db, tmp_path):
+    no_vector, _ = media(db, "image")
+    not_image = tmp_path / "notes.txt"
+    not_image.write_text("hello")
+    cases = [
+        ({"mediaId": 999}, "unknown media id 999"),
+        ({"mediaId": no_vector}, f"media {no_vector} has no image_embed vectors. run snapsort ingest --modules image_embed"),
+        ({"path": str(tmp_path / "missing.jpg")}, "cannot read query image"),
+        ({"path": str(not_image)}, "cannot read query image"),
+        ({"imageRef": "abc"}, "similar needs mediaId or path"),
+    ]
+    for similar, message in cases:
+        with pytest.raises(QueryError, match=re.escape(message)):
+            search(db, [], similar)
+
+
+def test_similar_path_without_any_vectors_says_so(db, sample_image):
+    media(db, "image")  # ingested without image_embed
+    with pytest.raises(QueryError, match=re.escape(
+            "no image_embed vectors in this library. run snapsort ingest --modules image_embed")):
+        search(db, [], {"path": str(sample_image)})
+
+
+def test_similar_path_model_failure_is_a_query_error(db, q, sample_image, monkeypatch):
+    from snapsort.modules.image_embed import ImageEmbed
+
+    _, [f] = media(db, "image")
+    embed(db, f, q)
+
+    def boom(self):
+        raise OSError("model not cached")
+
+    monkeypatch.setattr(ImageEmbed, "setup", boom)
+    with pytest.raises(QueryError, match="image_embed model failed: OSError: model not cached"):
+        search(db, [], {"path": str(sample_image)})
+
+
+@pytest.fixture
+def run(tmp_path, monkeypatch, capsys):
+    """cli.main run in tmp_path, whose .snapsort is the db fixture's. Returns (exit code, stdout, stderr)."""
+    monkeypatch.chdir(tmp_path)
+
+    def go(*argv):
+        code = cli.main(list(argv))
+        out = capsys.readouterr()
+        return code, out.out, out.err
+
+    return go
+
+
+def test_cli_search_prints_segments_and_count(db, run):
+    _, f = media(db, "video", frames=11, name="clip.mov")
+    media(db, "image", name="other.jpg")
+    anna = person(db, [f[i] for i in (1, 2, 3, 5, 6, 10)])
+    assert run("search", "--person", str(anna)) == (0, "/lib/clip.mov  video  0:01–0:06, 0:10\n1 of 2 files\n", "")
+
+
+def test_cli_or_and_same_frame(db, run):
+    _, f = media(db, "video", frames=6, name="v.mov")
+    media(db, "image", name="i.jpg")
+    anna, ben = person(db, [f[1]]), person(db, [f[5]])
+    assert run("search", "--person", f"{anna},{ben}") == (0, "/lib/v.mov  video  0:01, 0:05\n1 of 2 files\n", "")
+    assert run("search", "--person", f"{anna},{ben}", "--same-frame") == (0, "0 of 2 files\n", "")
+    assert run("search", "--person", str(anna), "--kind", "image", "--or") == \
+        (0, "/lib/i.jpg  image\n/lib/v.mov  video  0:01\n2 of 2 files\n", "")
+
+
+def test_cli_date_flags(db, run):
+    _, [f] = media(db, "image", name="july.jpg")
+    captured(db, f, "2026-07-15 10:00:00")
+    _, [g] = media(db, "image", name="aug.jpg")
+    captured(db, g, "2026-08-02 10:00:00")
+    assert run("search", "--from", "2026-07-01", "--to", "2026-07-31") == (0, "/lib/july.jpg  image\n1 of 2 files\n", "")
+    assert run("search", "--from", "2026-08-01") == (0, "/lib/aug.jpg  image\n1 of 2 files\n", "")
+    code, out, _ = run("search", "--to", "2026-07-31", "--json")
+    assert [h["capturedAt"] for h in json.loads(out)] == ["2026-07-15 10:00:00"]
+    code, _, err = run("search", "--to", "2026-7-1")
+    assert code == 2 and "date must be YYYY-MM-DD, got '2026-7-1'" in err
+
+
+def test_cli_text_search(db, run, q, rng, clip):
+    _, [f] = media(db, "image", name="bike.jpg")
+    _, [g] = media(db, "image", name="cat.jpg")
+    embed(db, f, near(q, 0.9, rng), "clip_embed")
+    embed(db, g, near(q, 0.1, rng), "clip_embed")
+    assert run("search", "motorcycle", "--min-score", "0.5") == (0, "/lib/bike.jpg  image  0.90\n1 of 2 files\n", "")
+    code, _, err = run("search", "motorcycle", "--similar-media", "1")
+    assert code == 2 and "use a text query or a similar image, not both" in err
+
+
+def test_cli_search_shows_scores_with_similar(db, run, q):
+    query, [fq] = media(db, "image", name="q.jpg")
+    embed(db, fq, q)
+    assert run("search", "--similar-media", f"{query}@0", "--min-score", "0.5") == \
+        (0, "/lib/q.jpg  image  1.00\n1 of 1 files\n", "")
+
+
+def test_cli_or_with_similar_prints_unscored_files(db, run, q, rng):
+    query, [fq] = media(db, "image", name="q.jpg")
+    embed(db, fq, q)
+    _, [fa] = media(db, "image", name="anna.jpg")
+    embed(db, fa, near(q, 0.1, rng))
+    anna = person(db, [fa])
+    assert run("search", "--person", str(anna), "--similar-media", str(query), "--min-score", "0.5", "--or") == \
+        (0, "/lib/q.jpg  image  1.00\n/lib/anna.jpg  image  -\n2 of 2 files\n", "")
+
+
+def test_cli_search_json(db, run, q):
+    query, [fq] = media(db, "image", name="q.jpg")
+    embed(db, fq, q)
+    code, out, _ = run("search", "--similar-media", str(query), "--json")
+    assert code == 0
+    assert json.loads(out) == [{"id": query, "kind": "image", "path": "/lib/q.jpg", "name": "q.jpg",
+                                "addedAt": "2026-10-09 10:00:00", "capturedAt": None,
+                                "score": pytest.approx(1.0, abs=1e-5),
+                                "matches": [], "segments": [], "bestFrameTs": None}]
+
+
+def test_cli_json_video_fields(db, run):
+    _, f = media(db, "video", frames=3, name="v.mov")
+    anna = person(db, [f[0], f[1]])
+    code, out, _ = run("search", "--person", str(anna), "--json")
+    [item] = json.loads(out)
+    assert item["matches"] == [{"ts": 0.0, "score": None}, {"ts": 1.0, "score": None}]
+    assert item["segments"] == [{"start": 0.0, "end": 1.0, "score": None}] and item["bestFrameTs"] == 0.0
+
+
+def test_cli_no_matches_exits_0(db, run):
+    media(db, "image")
+    assert run("search", "--kind", "video") == (0, "0 of 1 files\n", "")
+    assert run("search", "--kind", "video", "--json") == (0, "[]\n", "")
+
+
+def test_cli_query_error_exits_2(db, run):
+    code, out, err = run("search", "--person", "7")
+    assert (code, out) == (2, "")
+    assert "error: unknown person id(s): 7. see snapsort people" in err
+
+
+def test_cli_bad_arguments_exit_2(db, run, capsys):
+    cases = [
+        (["search", "--person", "anna"], "expected comma-separated person ids, got 'anna'. see snapsort people"),
+        (["search", "--similar-media", "x@1"], "expected ID or ID@SECONDS, got 'x@1'"),
+        (["search", "--similar", "a.jpg", "--similar-media", "1"], "not allowed with argument"),
+    ]
+    for argv, message in cases:
+        with pytest.raises(SystemExit) as e:
+            run(*argv)
+        assert e.value.code == 2
+        assert message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("cmd", ["search", "people", "places"])
+def test_cli_without_database_exits_2(tmp_path, run, cmd):
+    code, _, err = run(cmd)
+    assert code == 2 and "no database" in err
+    assert not (tmp_path / ".snapsort").exists()
+
+
+def test_cli_people_and_places(db, run):
+    _, f = media(db, "video", frames=3)
+    _, g = media(db, "image")
+    anna = person(db, [f[0], f[1]])
+    add_faces(db, anna, g)
+    ben = person(db, [f[2]])
+    with db:
+        db.execute("UPDATE persons SET name = 'Ben' WHERE id = ?", (ben,))
+    place(db, f[0], "tokyo, japan")
+    place(db, g[0], "tokyo, japan")
+    _, h = media(db, "image")
+    place(db, h[0], "kyoto, japan")
+    _, k = media(db, "image")
+    place(db, k[0], None)  # GPS without a place name
+    assert run("people") == (0, f"{anna}\t\t3\t2\n{ben}\tBen\t1\t1\n", "")
+    assert run("places") == (0, "tokyo, japan\t2\nkyoto, japan\t1\n", "")
+
+
+def test_clock_format():
+    assert cli._clock(5.0) == "0:05"
+    assert cli._clock(65.0) == "1:05"
+    assert cli._clock(3725.0) == "1:02:05"
+    assert cli._span(Segment(10.0, 10.0, None)) == "0:10"
+    assert cli._span(Segment(1.0, 6.0, None)) == "0:01–0:06"
