@@ -17,7 +17,7 @@ from snapsort.ingest import connect, load_image
 GAP = 2.0   # seconds; matches this close merge into one segment, which bridges one missed 1 fps frame
 SORTS = ("relevance", "similarity", "newest", "oldest", "name")
 MIN_SCORE = 0.5   # calibrated on a real folder, see the design's Findings
-TEXT_MIN_SCORE = 0.01   # SigLIP match probability; provisional until calibrated on a real folder
+TEXT_MIN_SCORE = 0.01   # SigLIP match probability, calibrated on a real folder, see the design's Findings
 CHUNK = 900       # media ids per IN (...) query, under SQLite's oldest variable limit (999)
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -343,10 +343,11 @@ def _scored(conn, module: str, q: np.ndarray, media: set[int] | None, min_score:
                                  (module, *chunk)).fetchall()
     if not rows:
         return {}, {}
-    matrix = np.stack([np.frombuffer(v, "<f4") for _, _, v in rows])
-    if matrix.shape[1] != q.shape[0]:
-        raise QueryError(f"query has {q.shape[0]} dims but stored {module} vectors have {matrix.shape[1]}. "
+    wrong = sorted({len(v) // 4 for _, _, v in rows if len(v) != 4 * q.size})  # e.g. left by an older model
+    if wrong:
+        raise QueryError(f"query has {q.size} dims but stored {module} vectors have {', '.join(map(str, wrong))}. "
                          f"re-run snapsort ingest --modules {module}")
+    matrix = np.stack([np.frombuffer(v, "<f4") for _, _, v in rows])
     score = matrix @ q if prob is None else prob(matrix @ q)
     hits = [(mid, fid, float(c)) for (fid, mid, _), c in zip(rows, score) if c >= min_score]
     return _by_media((mid, fid) for mid, fid, _ in hits), {fid: c for _, fid, c in hits}

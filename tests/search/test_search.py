@@ -482,14 +482,34 @@ def clip(monkeypatch, q):
 
 
 def test_text_cuts_and_ranks(db, q, rng, clip):
-    a, [fa] = media(db, "image")
-    b, [fb] = media(db, "image")
-    c, [fc] = media(db, "image")
+    c, [fc] = media(db, "image", name="a.jpg")
+    b, [fb] = media(db, "image", name="b.jpg")
+    a, [fa] = media(db, "image", name="c.jpg")  # best score, but last by id and name
     for fid, cos in ((fa, 0.9), (fb, 0.6), (fc, 0.1)):
         embed(db, fid, near(q, cos, rng), "clip_embed")
     hits = search(db, [], q="motorcycle", min_score=0.5)
     assert [h.media_id for h in hits] == [a, b]  # relevance is the default sort
     assert [h.score for h in hits] == pytest.approx([0.9, 0.6], abs=1e-5)
+
+
+def test_text_scores_are_match_probabilities(db, q, rng, clip, monkeypatch):
+    monkeypatch.setattr("snapsort.modules.clip_embed.ClipEmbed.match_probability", lambda self, s: s / 2)
+    a, [fa] = media(db, "image")
+    _, [fb] = media(db, "image")
+    embed(db, fa, near(q, 0.9, rng), "clip_embed")
+    embed(db, fb, near(q, 0.4, rng), "clip_embed")
+    [hit] = search(db, [], q="motorcycle", min_score=0.3)
+    assert hit.media_id == a and hit.score == pytest.approx(0.45, abs=1e-5)
+
+
+def test_mixed_vector_sizes_are_a_query_error(db, q, rng, clip):
+    _, [f] = media(db, "image")
+    _, [g] = media(db, "image")
+    embed(db, f, q, "clip_embed")
+    embed(db, g, np.ones(32), "clip_embed")  # left over from an older clip_embed version
+    with pytest.raises(QueryError, match=re.escape(
+            "query has 64 dims but stored clip_embed vectors have 32. re-run snapsort ingest --modules clip_embed")):
+        search(db, [], q="motorcycle")
 
 
 def test_text_default_cutoff_is_text_min_score(db, q, rng, clip, monkeypatch):
@@ -499,6 +519,7 @@ def test_text_default_cutoff_is_text_min_score(db, q, rng, clip, monkeypatch):
     embed(db, fa, near(q, 0.6, rng), "clip_embed")
     embed(db, fb, near(q, 0.4, rng), "clip_embed")
     assert [h.media_id for h in search(db, [], q="motorcycle")] == [a]
+    assert len(search(db, [], q="motorcycle", min_score=0)) == 2  # 0 is a cutoff, not "use the default"
 
 
 def test_text_stacks_with_person(db, q, rng, clip):
@@ -633,7 +654,7 @@ def test_cli_text_search(db, run, q, rng, clip):
     _, [g] = media(db, "image", name="cat.jpg")
     embed(db, f, near(q, 0.9, rng), "clip_embed")
     embed(db, g, near(q, 0.1, rng), "clip_embed")
-    assert run("search", "motorcycle", "--min-score", "0.5") == (0, "/lib/bike.jpg  image  0.90\n1 of 2 files\n", "")
+    assert run("search", "motorcycle", "--min-score", "0.5") == (0, "/lib/bike.jpg  image  0.900\n1 of 2 files\n", "")
     code, _, err = run("search", "motorcycle", "--similar-media", "1")
     assert code == 2 and "use a text query or a similar image, not both" in err
 

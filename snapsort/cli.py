@@ -177,8 +177,9 @@ def _read(args) -> int:
         return 0
     for h in hits:
         cols = [h.path, h.kind]
-        if similar or args.text is not None:
-            cols.append("-" if h.score is None else f"{h.score:.2f}")  # unscored: matched another filter under --or
+        if similar or args.text is not None:  # text probabilities are small (mostly 0.01-0.2): one more digit
+            score = "-" if h.score is None else f"{h.score:.3f}" if args.text is not None else f"{h.score:.2f}"
+            cols.append(score)  # "-": matched another filter under --or
         if h.segments:
             cols.append(", ".join(_span(g) for g in h.segments))
         print("  ".join(cols))
