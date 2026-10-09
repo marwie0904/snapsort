@@ -7,6 +7,10 @@ from pathlib import Path
 
 import coremltools as ct
 import numpy as np
+import objc
+import Quartz
+import Vision
+from Foundation import NSData
 from PIL import Image
 
 from snapsort.contract import Frame, Module, Result
@@ -85,6 +89,77 @@ def align(image: Image.Image, left_pupil, right_pupil) -> Image.Image:
                           fillcolor=(0, 0, 0))
 
 
+
+def _to_cgimage(image: Image.Image):
+    w, h = image.size
+    raw = image.convert("RGBA").tobytes()
+    provider = Quartz.CGDataProviderCreateWithCFData(NSData.dataWithBytes_length_(raw, len(raw)))
+    return Quartz.CGImageCreate(w, h, 8, 32, w * 4, Quartz.CGColorSpaceCreateDeviceRGB(),
+                                Quartz.kCGImageAlphaNoneSkipLast, provider, None, False,
+                                Quartz.kCGRenderingIntentDefault)
+
+
+def _perform(cgimage, requests) -> None:
+    handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cgimage, None)
+    ok, err = handler.performRequests_error_(requests, None)
+    if not ok:
+        raise RuntimeError(f"Vision request failed: {err}")
+
+
+def _rect(r) -> tuple[float, float, float, float]:
+    return (r.origin.x, r.origin.y, r.size.width, r.size.height)
+
+
+def _degrees(n) -> float | None:
+    return None if n is None else math.degrees(float(n))
+
+
+def _pupil(region, w: int, h: int) -> tuple[float, float] | None:
+    """Mean of a landmark region's points in top-left pixel coordinates (Vision is bottom-left)."""
+    if region is None or region.pointCount() == 0:
+        return None
+    n = region.pointCount()
+    pts = region.pointsInImageOfSize_((w, h))
+    return (sum(pts[i].x for i in range(n)) / n, h - sum(pts[i].y for i in range(n)) / n)
+
+
+def detect(image: Image.Image) -> list[Face]:
+    """Every face Vision finds, before the gate.
+
+    The rectangles request runs first: on its own, the landmarks request reports confidence 1.0,
+    no pitch and yaw only in 45-degree steps. Capture-quality results come back in a different
+    order from the faces, so they are matched by box."""
+    w, h = image.size
+    with objc.autorelease_pool():  # pipeline worker threads have no pool to drain Vision objects
+        cg = _to_cgimage(image)
+        rects = Vision.VNDetectFaceRectanglesRequest.alloc().init()
+        _perform(cg, [rects])
+        found = list(rects.results() or [])
+        if not found:
+            return []
+        marks = Vision.VNDetectFaceLandmarksRequest.alloc().init()
+        marks.setInputFaceObservations_(found)
+        quality = Vision.VNDetectFaceCaptureQualityRequest.alloc().init()
+        quality.setInputFaceObservations_(found)
+        _perform(cg, [marks, quality])
+        scored = [(_rect(q.boundingBox()), q.faceCaptureQuality()) for q in quality.results() or []]
+        faces = []
+        for o in marks.results() or []:
+            box = _rect(o.boundingBox())  # normalized, bottom-left origin
+            match = max(scored, key=lambda s: iou(box, s[0]), default=None)
+            lm = o.landmarks()
+            faces.append(Face(
+                box=(box[0], 1 - box[1] - box[3], box[2], box[3]),
+                confidence=float(o.confidence()),
+                yaw=_degrees(o.yaw()), pitch=_degrees(o.pitch()), roll=_degrees(o.roll()),
+                quality=(float(match[1]) if match and match[1] is not None and iou(box, match[0]) > 0.9
+                         else None),
+                left_pupil=_pupil(lm.leftPupil(), w, h) if lm else None,
+                right_pupil=_pupil(lm.rightPupil(), w, h) if lm else None,
+                nose_and_mouth=bool(lm and lm.nose() is not None and lm.outerLips() is not None)))
+        return faces
+
+
 class Faces(Module):
     name = "faces"
     version = "1"
@@ -100,3 +175,16 @@ class Faces(Module):
         out = self.model.predict([{"image": c} for c in crops])
         v = np.stack([np.asarray(o["embedding"], np.float32).reshape(-1) for o in out])
         return v / np.linalg.norm(v, axis=1, keepdims=True)
+
+    def process(self, frames: list[Frame]) -> list[Result]:
+        kept, crops = [], []
+        for f in frames:
+            w, h = f.image.size
+            for face in detect(f.image):
+                if passes_gate(face, w, h):
+                    kept.append((f.idx, face))
+                    crops.append(align(f.image, face.left_pupil, face.right_pupil))
+        vectors = self.embed(crops)
+        return [Result(frame_idx=idx, label="face", score=face.confidence, bbox=clip_box(face.box), vector=v,
+                       data={"yaw": face.yaw, "pitch": face.pitch, "roll": face.roll, "quality": face.quality})
+                for (idx, face), v in zip(kept, vectors)]

@@ -1,11 +1,16 @@
 """faces module tests. Real-face checks run only when SNAPSORT_FACE_TEST_DIR or SNAPSORT_LFW_DIR
 is set, because the repo commits no binary fixtures."""
 import math
+import os
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
+from snapsort.contract import Frame
+from snapsort.ingest import IMAGE_EXTS, load_image, validate
 from snapsort.modules.faces import EYES, Face, Faces, align, clip_box, iou, passes_gate
 
 
@@ -102,3 +107,53 @@ def test_align_fills_outside_the_frame_with_black():
     img = Image.new("RGB", (400, 300), "white")
     crop = align(img, (5, 40), (60, 44))
     assert crop.getpixel((0, 56)) == (0, 0, 0)
+
+
+FACE_DIR = os.environ.get("SNAPSORT_FACE_TEST_DIR")
+needs_faces = pytest.mark.skipif(
+    not FACE_DIR, reason="set SNAPSORT_FACE_TEST_DIR to voogle's labeled folder ('for testing - normalized')")
+
+
+def image_frame(image, path="x.jpg"):
+    return [Frame(1, str(path), "image", 0, None, image)]
+
+
+def test_output_passes_contract_and_finds_no_faces(faces, sample_frames):
+    assert validate(faces.process(sample_frames), sample_frames) == []
+
+
+def test_large_frame_in_worker_thread(faces):
+    # The pipeline calls process() from a worker thread. 48 MP is a modern phone photo.
+    frame = image_frame(Image.new("RGB", (8000, 6000), (90, 120, 150)))
+    with ThreadPoolExecutor(1) as pool:
+        assert pool.submit(faces.process, frame).result() == []
+
+
+@needs_faces
+def test_labeled_photos(faces):
+    photos = sorted(p for p in Path(FACE_DIR).glob("*/*") if p.suffix.lower() in IMAGE_EXTS)
+    assert len(photos) == 19
+    total = 0
+    for p in photos:
+        frame = image_frame(load_image(p), p)
+        results = validate(faces.process(frame), frame)
+        assert len(results) == (2 if p.parent.name == "KathrynAndDJ" else 1), p.name
+        for r in results:
+            assert r.label == "face" and 0.5 <= r.score <= 1
+            assert r.vector.shape == (512,) and abs(np.linalg.norm(r.vector) - 1) < 1e-4
+            assert set(r.data) == {"yaw", "pitch", "roll", "quality"}
+        if len(results) == 2:  # two people side by side: their boxes don't overlap
+            assert iou(results[0].bbox, results[1].bbox) < 0.2
+        total += len(results)
+    assert total == 23
+
+
+@needs_faces
+def test_face_cut_by_frame_edge_gets_clipped_box(faces):
+    img = load_image(Path(FACE_DIR) / "kathryn" / "jBq4b_5f.jpg")
+    [r] = faces.process(image_frame(img))
+    x, _, w, _ = r.bbox
+    cut = img.crop((int((x + 0.2 * w) * img.width), 0, img.width, img.height))  # cut through the face
+    frame = image_frame(cut)
+    [r] = validate(faces.process(frame), frame)  # raw Vision x was -0.17 in the probe
+    assert r.bbox[0] == 0.0
