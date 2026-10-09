@@ -59,6 +59,29 @@ q = m.embed([load_image(query_path)])[0]
 
 Search goes through the same `load_image()` and `embed()` as ingest, so query and stored vectors share decoding and preprocessing. Opening the query with plain `Image.open` skips EXIF rotation (and cannot read HEIC): a rotated phone photo then scores about 0.86 against its own stored vector instead of 1.0.
 
+### Score cutoffs for search
+
+This module applies no cutoff. Scores range from -1 to 1 in theory but rarely drop below 0. Measured on 2026-10-09 (24 vectors: 3 webcam screenshots of one person, 20 ffmpeg `testsrc` frames, 1 solid-color photo):
+
+| Pair | Score |
+|---|---|
+| Unrelated content | 0.03–0.42 |
+| Same border and watermark overlay, face grayed out | 0.57–0.70 |
+| Same person and room, different moment | 0.80–0.90 |
+| Edited copy of the same image (mirrored, darkened 50%) | 0.96–0.99 |
+
+Starting cutoffs:
+
+- Similar shots: rank by score and hide results below 0.5.
+- Near-duplicate (same photo): 0.95 or higher.
+
+Recalibrate both on a real photo library before fixing them in the search module. These numbers come from a mostly synthetic set.
+
+Two limits to design around:
+
+- The model matches whole scenes, not identity. Shared overlays, borders and rooms raise scores (0.57–0.70 for the overlay alone). Use the face vectors from person detection for "find this person".
+- Very small queries are unreliable. At 62×31 px, the exact source image ranked second (0.673 vs 0.690).
+
 ## Errors
 
 No module-specific handling. The pipeline runner already covers it:
