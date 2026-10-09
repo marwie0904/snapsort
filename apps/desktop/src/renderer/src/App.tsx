@@ -96,9 +96,9 @@ export const App: React.FC = () => {
       <Sidebar counts={counts} onAddFolder={handleAddFolder} />
 
       {/* 2. Center Content Area */}
-      <main className={`flex-1 h-full flex flex-col min-w-0 overflow-hidden px-8 transition-all duration-300 ${sidebarOpen ? 'pt-6' : 'pt-7 pl-20'}`}>
-        {/* Top Search & Filter Bar */}
-        <div className="shrink-0 mb-2">
+      <main className={`flex-1 h-full flex flex-col min-w-0 overflow-hidden px-8 transition-all duration-300 ${sidebarOpen ? '' : 'pl-20'}`}>
+        {/* Top Search & Filter Bar, doubles as the window drag area */}
+        <div className={`app-drag shrink-0 pb-2 ${sidebarOpen ? 'pt-6' : 'pt-7'}`}>
           <TopBar />
         </div>
 

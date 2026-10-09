@@ -159,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       data-tour="sidebar"
       className={`h-full bg-[var(--surface-1)] border-r border-[var(--border)] flex flex-col justify-between select-none text-sm transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${
         sidebarOpen
-          ? 'w-64 min-w-64 px-5 pb-5 pt-8 opacity-100'
+          ? 'w-64 min-w-64 px-5 pb-5 opacity-100'
           : 'w-0 min-w-0 p-0 border-r-0 opacity-0 pointer-events-none'
       }`}
     >
@@ -167,12 +167,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="space-y-5 overflow-y-auto pr-1">
         {/* Wordmark logo & Collapse button (traffic-light safe & draggable) */}
         <div
-          className="flex items-center justify-between"
+          className="flex items-center justify-between pt-14"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <Wordmark size="md" theme={effectiveTheme} />
-          </div>
+          <Wordmark size="md" theme={effectiveTheme} />
           <button
             type="button"
             onClick={toggleSidebar}

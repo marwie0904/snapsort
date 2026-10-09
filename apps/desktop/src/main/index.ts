@@ -91,11 +91,12 @@ function openShelfWindow(): void {
   };
 
   if (isMac) {
-    windowOptions.titleBarStyle = 'hiddenInset';
-    windowOptions.trafficLightPosition = { x: 12, y: 14 };
+    windowOptions.titleBarStyle = 'hidden';
   }
 
   shelfWindow = new BrowserWindow(windowOptions);
+  // The shelf header has its own close button
+  if (isMac) shelfWindow.setWindowButtonVisibility(false);
 
   shelfWindow.webContents.on('did-finish-load', () => {
     console.log('[main] Shelf window finished loading');

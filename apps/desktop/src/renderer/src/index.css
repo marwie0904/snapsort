@@ -12,6 +12,10 @@
 @source "../../../../../packages/ui/src";
 @import "@snapsort/ui/tokens.css";
 
+/* Window drag area. Controls inside it stay clickable. */
+.app-drag { -webkit-app-region: drag; }
+.app-drag :is(button, input, textarea, select, a, [role="button"]) { -webkit-app-region: no-drag; }
+
 /* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
