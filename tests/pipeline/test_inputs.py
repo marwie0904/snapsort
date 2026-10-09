@@ -64,5 +64,8 @@ def test_connect_creates_schema_idempotently(tmp_path):
     conn = connect(tmp_path / "db")
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert tables == {"media", "frames", "results", "runs"}
+    indexes = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%'")}
+    assert indexes == {"results_module_label", "results_module_frame"}
     assert conn.execute("PRAGMA journal_mode").fetchone() == ("wal",)
     assert conn.execute("PRAGMA foreign_keys").fetchone() == (1,)

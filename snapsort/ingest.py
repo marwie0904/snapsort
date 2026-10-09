@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS results (
   data     TEXT
 );
 CREATE INDEX IF NOT EXISTS results_module_label ON results(module, label);
+CREATE INDEX IF NOT EXISTS results_module_frame ON results(module, frame_id);
 CREATE TABLE IF NOT EXISTS runs (
   media_id    INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
   module      TEXT NOT NULL,
@@ -226,6 +227,10 @@ def _ingest_file(conn, pool, path, active, ready, dims, frames_root) -> bool:
             batch = [Frame(media_id, str(path), kind, idx, ts, load_image(fp))
                      for _, idx, ts, fp in frames[i:i + BATCH]]
         except Exception as e:
+            if row is None:  # registered by this call: undo it so the next run retries cleanly
+                with conn:
+                    conn.execute("DELETE FROM media WHERE id = ?", (media_id,))
+                shutil.rmtree(frames_root / str(media_id), ignore_errors=True)
             return _skip(path, f"cannot read frame: {_msg(e)}")
         futures = {m: pool.submit(_call, m, batch, ready)
                    for m in pending if m in active and m.name not in errors}
@@ -268,11 +273,10 @@ def _register(conn, path: Path, kind: str, frames_root: Path) -> int:
             "INSERT INTO media (path, kind) VALUES (?, ?)", (str(path), kind)
         ).lastrowid
         if kind == "image":
-            load_image(path)
             rows = [(media_id, 0, None, str(path))]
         else:
             files = extract_frames(path, frames_root / str(media_id))
-            rows = [(media_id, i, i / FPS, str(f)) for i, f in enumerate(files)]
+            rows = [(media_id, i, i / FPS, str(f.resolve())) for i, f in enumerate(files)]
         conn.executemany("INSERT INTO frames (media_id, idx, ts, path) VALUES (?, ?, ?, ?)", rows)
     return media_id
 

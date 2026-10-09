@@ -64,6 +64,14 @@ def test_frames_per_media(sample_image, sample_video, data_dir):
     assert all(Path(r[3]).is_file() for r in rows)
 
 
+def test_video_frame_paths_absolute_with_relative_data_dir(sample_video, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert run_ingest([sample_video], [Counter("a")], Path(".snapsort"))
+    paths = [Path(p) for (p,) in q(tmp_path / ".snapsort", "SELECT path FROM frames")]
+    assert len(paths) == 3
+    assert all(p.is_absolute() and p.is_file() for p in paths)
+
+
 def test_results_and_runs_stored(sample_image, sample_video, data_dir):
     assert run_ingest([sample_image, sample_video], [Counter("a"), Counter("b")], data_dir)
     assert q(data_dir, "SELECT module, count(*) FROM results GROUP BY module") == [("a", 4), ("b", 4)]
@@ -133,6 +141,14 @@ def test_missing_unsupported_and_corrupt_files_skipped(tmp_path, data_dir):
         assert run_ingest([path], [Counter("a")], data_dir) is False
     assert q(data_dir, "SELECT count(*) FROM media") == [(0,)]
     assert not any((data_dir / "frames").glob("*"))
+
+
+def test_new_image_decoded_once(sample_image, data_dir, monkeypatch):
+    calls = []
+    original = ingest.load_image
+    monkeypatch.setattr(ingest, "load_image", lambda p: calls.append(p) or original(p))
+    assert run_ingest([sample_image], [Counter("a")], data_dir)
+    assert len(calls) == 1
 
 
 def test_ingest_dot_ignores_own_data_dir(tmp_path, sample_video, data_dir):
