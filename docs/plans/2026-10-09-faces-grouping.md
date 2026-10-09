@@ -10,13 +10,13 @@
 2. Collapse each media file's faces into appearances (single link).
 3. Match appearances to stored person centroids.
 4. Run Louvain over the leftovers to make new persons.
-5. Refresh the centroids and representative faces of the persons it touched.
+5. Refresh the centroids of the persons it touched, from their stored centroids plus the new appearances. Then re-pick their representative faces.
 
 Steps 3–5 run per batch of 500 appearances. `cli.py` gains the `group` subcommand and the call after ingest. The pipeline (`ingest.py`, `contract.py`, the modules) is not changed.
 
 **Tech Stack:** Python 3.12, uv, numpy, networkx (Louvain), SQLite (JSON functions), pytest.
 
-**Spec:** `docs/design/2026-10-09-faces.md`, section "Phase 2: grouping". The deviations below change it in three places.
+**Spec:** `docs/design/2026-10-09-faces.md`, section "Phase 2: grouping". The deviations below change it in four places.
 
 ## Deviations from the design (confirm before Task 1)
 
@@ -38,6 +38,21 @@ Measured on 2026-10-09 with the probe's cached LFW embeddings (13,039 gated face
    - The design's 97% came from single-pass grouping, which measures 97.99%. Two passes measure 96.99% even without batches, so the design's check fails as written.
    - The drop is built into incremental grouping. Matching against every stored appearance instead of 20 centroids gives the same 96.93%. A new face that links to its person only through other new faces starts a new person.
 3. **`run_grouping` re-picks a NULL `face_id` on every call**, including calls with no unassigned faces. It costs one UPDATE. Without it, a person whose representative face a re-ingest deleted has no `faceRef` until new faces arrive.
+4. **Centroids are refreshed from the stored centroids plus the new appearances.**
+   - The design rebuilds a touched person's centroids from all of their faces. A person in 50 hours of video has 180,000 faces (about 370 MB), and the design reloads them on every run where that person appears.
+   - Instead, each stored centroid counts as one point weighted by its `weight`, and each new appearance counts as a point with weight 1. If there are more than 20 points, weighted spherical k-means summarizes them. The cost stays the same however many faces the person has.
+   - Trade-off: after a re-ingest, the deleted faces stay in the stored summary and their new copies are added on top.
+   - Comparison on LFW (probe `p21_compare.py`, batch 500). Each cell gives the full rebuild first, then deviation 4.
+
+     | Scenario | Pair precision | Mixed groups | Share, people with ≥ 10 photos | Share, people with ≥ 40 photos |
+     |---|---|---|---|---|
+     | 2 passes | 99.96 / 99.96% | 1 / 1 | 96.93 / 96.93% | 99.26 / 99.26% |
+     | 10 passes | 99.96 / 99.96% | 0 / 0 | 94.98 / 94.99% | 99.06 / 99.13% |
+     | 1 run, shuffled order | 99.96 / 99.96% | 1 / 1 | 94.49 / 94.51% | 97.14 / 97.14% |
+     | 2 passes, then a full re-ingest | 99.96 / 99.96% | 1 / 1 | 94.49 / 96.93% | 97.40 / 99.26% |
+
+   - Deviation 4 is equal or better everywhere. It does better on re-ingest because the full rebuild throws away the person's stored summary once their old faces are deleted.
+   - **Rule (from the user):** deviation 4 stays only while its pair precision and main-group share are each at least 95% of the full rebuild's. Task 3's LFW test checks this on the module's own output.
 
 Unchanged: which persons `listPeople` shows is still an open decision. It belongs to the API layer, which is outside this phase.
 
@@ -86,7 +101,10 @@ Unchanged: which persons `listPeople` shows is still an open decision. It belong
   - `@dataclass GroupSummary(faces: int, new_persons: int, joined: int)`
   - constants `THRESHOLD`, `CENTROIDS`, `KMEANS_ITERS`, `SEED`, `BATCH`, `CHUNK`
   - the tables `persons`, `person_faces`, `person_centroids`
-  - the private `_refresh_centroids(conn, person_id)`, which the rollback test monkeypatches
+  - private helpers that tests use:
+    - `_refresh_centroids(conn, person_id: int, new: np.ndarray)`. `new` is this batch's appearance vectors for the person (N×512 float32). The rollback test monkeypatches it, and Task 3 swaps in the full-rebuild reference.
+    - `_save_centroids(conn, person_id: int, X: np.ndarray, weight: np.ndarray)`. It stores X, or a weighted k-means summary of X when X has more than `CENTROIDS` rows.
+    - `_unit(x: np.ndarray) -> np.ndarray`
 
 - [ ] **Step 1: Add the dependency**
 
@@ -255,6 +273,20 @@ def test_many_appearances_are_summarized_to_centroids(db, data_dir, rng):
     assert all(abs(np.linalg.norm(np.frombuffer(v, "<f4")) - 1) < 1e-5 for v, _ in rows)
 
 
+def test_refresh_keeps_stored_centroids_and_adds_new_photos(db, data_dir, rng):
+    # Deviation 4: the summary is built from the stored centroids plus the new photos, and the
+    # person's faces are never reloaded. A full rebuild would leave 5 centroids of weight 1.
+    a = person(rng)
+    photos(db, near(a, 0.9, rng, 30))
+    run_grouping(data_dir)
+    with db:
+        db.execute("DELETE FROM results")  # a re-ingest deleted every face
+    photos(db, near(a, 0.9, rng, 5))
+    assert run_grouping(data_dir) == GroupSummary(faces=5, new_persons=0, joined=5)
+    rows = db.execute("SELECT weight FROM person_centroids").fetchall()
+    assert len(rows) == CENTROIDS and sum(w for (w,) in rows) == 35
+
+
 def test_duplicate_photos_do_not_break_centroids(db, data_dir, rng):
     # One photo copied into 25 folders: identical vectors leave k-means++ nothing to weigh by.
     photos(db, [near(person(rng), 0.9, rng)[0]] * 25)
@@ -305,8 +337,8 @@ Expected: collection error `ModuleNotFoundError: No module named 'snapsort.group
 ```python
 """Grouping: assign every face result without a person to a person.
 
-Design: docs/design/2026-10-09-faces.md, "Phase 2: grouping". The batches come from
-docs/plans/2026-10-09-faces-grouping.md (deviation 1)."""
+Design: docs/design/2026-10-09-faces.md, "Phase 2: grouping". The batches and the incremental
+centroid refresh come from docs/plans/2026-10-09-faces-grouping.md (deviations 1 and 4)."""
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -441,10 +473,12 @@ def _place(conn, apps) -> set[int]:
         placed += [(int(left[i]), pid, 1.0) for i in community]
     conn.executemany("INSERT INTO person_faces (result_id, person_id, score) VALUES (?, ?, ?)",
                      [(rid, pid, score) for i, pid, score in placed for rid in apps[i][0]])
-    touched = {pid for _, pid, _ in placed}
-    for pid in touched:
-        _refresh_centroids(conn, pid)
-    return touched
+    new: dict[int, list] = {}
+    for i, pid, _ in placed:
+        new.setdefault(pid, []).append(apps[i][1])
+    for pid, vectors in new.items():
+        _refresh_centroids(conn, pid, np.stack(vectors))
+    return set(new)
 
 
 def _communities(X: np.ndarray) -> list[list[int]]:
@@ -458,36 +492,46 @@ def _communities(X: np.ndarray) -> list[list[int]]:
     return sorted(sorted(comm) for comm in nx.community.louvain_communities(g, weight="weight", seed=SEED))
 
 
-def _refresh_centroids(conn, person_id: int) -> None:
-    """Step 5: one unit mean per media file over all the person's faces. More than CENTROIDS
-    of them are summarized by spherical k-means. Slots k-means leaves empty are not stored."""
-    by_media: dict[int, list] = {}
-    for media_id, blob in conn.execute(
-            "SELECT f.media_id, r.vector FROM person_faces pf JOIN results r ON r.id = pf.result_id "
-            "JOIN frames f ON f.id = r.frame_id WHERE pf.person_id = ?", (person_id,)):
-        by_media.setdefault(media_id, []).append(np.frombuffer(blob, "<f4"))
-    X = _unit(np.stack([np.mean(v, 0) for v in by_media.values()]))
-    C, weight = (X, np.ones(len(X), int)) if len(X) <= CENTROIDS else _kmeans(X, CENTROIDS)
+def _refresh_centroids(conn, person_id: int, new: np.ndarray) -> None:
+    """Step 5 (deviation 4): the person's stored centroids, each weighted by its appearance count,
+    plus this batch's new appearances (weight 1), summarized again. The person's faces are never
+    reloaded, so the cost stays the same however many faces the person has."""
+    rows = conn.execute("SELECT vector, weight FROM person_centroids WHERE person_id = ?", (person_id,)).fetchall()
+    X = np.stack([np.frombuffer(v, "<f4") for v, _ in rows] + list(new))
+    weight = np.array([w for _, w in rows] + [1] * len(new), np.float64)
+    _save_centroids(conn, person_id, X, weight)
+
+
+def _save_centroids(conn, person_id: int, X: np.ndarray, weight: np.ndarray) -> None:
+    """Replace the person's centroids with the rows of X, or with CENTROIDS weighted k-means
+    centroids when X has more rows. `weight` is the appearances behind each row. Slots k-means
+    leaves empty are not stored."""
+    if len(X) > CENTROIDS:
+        X, weight = _kmeans(X, weight, CENTROIDS)
+    keep = weight > 0
     conn.execute("DELETE FROM person_centroids WHERE person_id = ?", (person_id,))
     conn.executemany(
         "INSERT INTO person_centroids (person_id, slot, vector, weight) VALUES (?, ?, ?, ?)",
-        [(person_id, slot, c.astype("<f4").tobytes(), int(w))
-         for slot, (c, w) in enumerate(zip(C[weight > 0], weight[weight > 0]))])
+        [(person_id, slot, c.astype("<f4").tobytes(), int(round(w)))
+         for slot, (c, w) in enumerate(zip(X[keep], weight[keep]))])
 
 
-def _kmeans(X: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
-    """Spherical k-means, ported from voogle's electCentroids. Returns k unit centroids and their
-    member counts. k-means++ start with distance 1 - cos, assignment by max dot product, unit
-    means, and empty slots reseeded from the largest cluster's members farthest from its centroid."""
+def _kmeans(X: np.ndarray, weight: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+    """Weighted spherical k-means, ported from voogle's electCentroids. Returns k unit centroids and
+    the total weight in each:
+    - k-means++ start with distance 1 - cos, sampled in proportion to weight x distance²
+    - assignment by max dot product, then weighted unit means
+    - empty slots reseeded from the largest cluster's members farthest from its centroid"""
     rng = np.random.default_rng(SEED)
     n = len(X)
     C = [X[rng.integers(n)]]
     d2 = np.full(n, np.inf)
     for _ in range(1, k):
         d2 = np.minimum(d2, np.maximum(1 - X @ C[-1], 0).astype(np.float64) ** 2)
-        total = d2.sum()
+        p = d2 * weight
+        total = p.sum()
         # identical vectors (one photo copied into many folders) leave nothing to weigh by
-        C.append(X[rng.choice(n, p=d2 / total) if total > 0 else rng.integers(n)])
+        C.append(X[rng.choice(n, p=p / total) if total > 0 else rng.integers(n)])
     C = np.stack(C)
     labels = np.full(n, -1)
     for _ in range(KMEANS_ITERS):
@@ -495,9 +539,9 @@ def _kmeans(X: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
         if (new == labels).all():
             break
         labels = new
-        counts = np.bincount(labels, minlength=k)
+        counts = np.bincount(labels, weights=weight, minlength=k)
         sums = np.zeros_like(C)
-        np.add.at(sums, labels, X)
+        np.add.at(sums, labels, X * weight[:, None].astype(X.dtype))
         full = counts > 0
         C[full] = _unit(sums[full])
         empty = np.flatnonzero(~full)
@@ -506,7 +550,7 @@ def _kmeans(X: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
             members = np.flatnonzero(labels == big)
             far = members[np.argsort(X[members] @ C[big])]
             C[empty] = X[far[np.minimum(np.arange(empty.size), far.size - 1)]]
-    return C, np.bincount(labels, minlength=k)
+    return C, np.bincount(labels, weights=weight, minlength=k)
 
 
 def _unit(x: np.ndarray) -> np.ndarray:
@@ -516,10 +560,10 @@ def _unit(x: np.ndarray) -> np.ndarray:
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/group -q`
-Expected: `12 passed`.
+Expected: `13 passed`.
 
 Run: `uv run pytest -q`
-Expected: `98 passed, 3 skipped` (the 3 skips are phase 1's env-gated checks).
+Expected: `99 passed, 3 skipped` (the 3 skips are phase 1's env-gated checks).
 
 - [ ] **Step 6: Commit**
 
@@ -671,7 +715,7 @@ Run: `uv run pytest tests/e2e/test_cli.py -q`
 Expected: `9 passed`.
 
 Run: `uv run pytest -q`
-Expected: `102 passed, 3 skipped`.
+Expected: `103 passed, 3 skipped`.
 
 - [ ] **Step 5: Commit**
 
@@ -745,17 +789,22 @@ def test_labeled_photos_give_three_persons(data_dir):
     assert list(folder["KathrynAndDJ"].values()) == [{kathryn, dj}] * 4
 
 
-@pytest.mark.skipif(not LFW_DIR, reason="set SNAPSORT_LFW_DIR to a folder with lfw/ (about 6 min)")
-def test_lfw_two_pass_grouping(data_dir):
-    """All 13,233 LFW photos in two passes, every other photo and then the rest, so the second pass
-    joins persons through stored centroids. The probe measured pair precision 99.96%, 1 mixed group
-    and a 96.93% main-group share for people with at least 10 photos."""
-    files = sorted((Path(LFW_DIR) / "lfw").glob("*/*.jpg"))
-    faces = Faces()
-    for half in (files[0::2], files[1::2]):
-        assert run_ingest(half, [faces], data_dir)
-        run_grouping(data_dir)
-    center = {}  # photo -> (distance to the center, person). LFW labels the face whose box holds the center.
+def rebuild_centroids(conn, person_id, new):
+    """The design's step 5, kept as the reference for deviation 4. It rebuilds from every face of
+    the person, one unit mean per media file, and ignores `new`."""
+    by_media = {}
+    for media_id, blob in conn.execute(
+            "SELECT f.media_id, r.vector FROM person_faces pf JOIN results r ON r.id = pf.result_id "
+            "JOIN frames f ON f.id = r.frame_id WHERE pf.person_id = ?", (person_id,)):
+        by_media.setdefault(media_id, []).append(np.frombuffer(blob, "<f4"))
+    X = group._unit(np.stack([np.mean(v, 0) for v in by_media.values()]))
+    group._save_centroids(conn, person_id, X, np.ones(len(X)))
+
+
+def lfw_scores(data_dir):
+    """(pair precision, mixed groups, main-group share of people with >= 10 photos), scored on the
+    face whose box holds each photo's center. That is the face LFW labels."""
+    center = {}  # photo -> (distance to the center, person)
     for path, bbox, pid in labeled(data_dir):
         x, y, w, h = json.loads(bbox)
         d = (x + w / 2 - 0.5) ** 2 + (y + h / 2 - 0.5) ** 2
@@ -768,24 +817,65 @@ def test_lfw_two_pass_grouping(data_dir):
         return n * (n - 1) / 2
 
     precision = sum(map(pairs, Counter(zip(found, true)).values())) / sum(map(pairs, Counter(found).values()))
-    assert precision >= 0.995
     per_person, per_group = {}, {}
     for t, f in zip(true, found):
         per_person.setdefault(t, Counter())[f] += 1
         per_group.setdefault(f, Counter())[t] += 1
-    mixed = [c for c in per_group.values() if len(c) > 1 and sorted(c.values())[-2] >= 2]
-    assert len(mixed) <= 1, mixed  # Sepp and Joseph Blatter are one man under two names
-    share = np.mean([max(c.values()) / c.total() for c in per_person.values() if c.total() >= 10])
-    assert share >= 0.96, share  # deviation 2: two passes measured 96.93%, one pass 97.99%
+    mixed = sum(1 for c in per_group.values() if len(c) > 1 and sorted(c.values())[-2] >= 2)
+    share = float(np.mean([max(c.values()) / c.total() for c in per_person.values() if c.total() >= 10]))
+    return precision, mixed, share
+
+
+@pytest.mark.skipif(not LFW_DIR, reason="set SNAPSORT_LFW_DIR to a folder with lfw/ (about 7 min)")
+def test_lfw_deviation_4_vs_full_rebuild(data_dir, monkeypatch):
+    """All 13,233 LFW photos are ingested once, then grouped by each centroid refresh:
+    - in two passes (every other photo, then the rest), so the second pass joins through stored centroids
+    - again after a full re-ingest, where every face is deleted and comes back with the same vector
+    The probe measured equal scores, except after the re-ingest (share 96.93% vs 94.49% for the rebuild)."""
+    files = sorted((Path(LFW_DIR) / "lfw").glob("*/*.jpg"))
+    assert run_ingest(files, [Faces()], data_dir)
+    later = {str(f.resolve()) for f in files[1::2]}
+    scores = {}
+    for name, refresh in (("rebuild", rebuild_centroids), ("deviation 4", group._refresh_centroids)):
+        monkeypatch.setattr(group, "_refresh_centroids", refresh)
+        conn = connect(data_dir / "snapsort.db")
+        conn.executescript(group.SCHEMA)
+        with conn:  # start clean and hide the second half
+            conn.execute("DELETE FROM persons")  # cascades to person_faces and person_centroids
+            conn.executemany(
+                "UPDATE results SET module = 'faces_later' WHERE frame_id IN (SELECT id FROM frames WHERE media_id = ?)",
+                [(m,) for m, p in conn.execute("SELECT id, path FROM media") if p in later])
+        run_grouping(data_dir)  # pass 1: every other photo
+        with conn:
+            conn.execute("UPDATE results SET module = 'faces' WHERE module = 'faces_later'")
+        run_grouping(data_dir)  # pass 2: the rest
+        scores[name, "2 passes"] = lfw_scores(data_dir)
+        with conn:  # a full re-ingest: every face deleted, then stored again with the same vector
+            last = conn.execute("SELECT max(id) FROM results").fetchone()[0]
+            conn.execute("INSERT INTO results (frame_id, module, label, score, bbox, vector, data) "
+                         "SELECT frame_id, module, label, score, bbox, vector, data FROM results WHERE module = 'faces'")
+            conn.execute("DELETE FROM results WHERE module = 'faces' AND id <= ?", (last,))
+        run_grouping(data_dir)
+        scores[name, "re-ingest"] = lfw_scores(data_dir)
+        conn.close()
+    for (name, case), (p, m, s) in scores.items():
+        print(f"{name:12s} {case:10s} precision {p:.4f}  mixed groups {m}  share {s:.4f}")
+    p, m, s = scores["deviation 4", "2 passes"]
+    assert p >= 0.995 and m <= 1 and s >= 0.96  # the design's check, with deviation 2's floor
+    for case in ("2 passes", "re-ingest"):  # the user's rule for deviation 4: within 5% of the rebuild
+        (p4, _, s4), (pr, _, sr) = scores["deviation 4", case], scores["rebuild", case]
+        assert p4 >= 0.95 * pr and s4 >= 0.95 * sr, case
 ```
 
 - [ ] **Step 2: Run the real-face checks**
 
-Run: `SNAPSORT_FACE_TEST_DIR="$HOME/Downloads/for testing - normalized" SNAPSORT_LFW_DIR=/private/tmp/claude-501/-Users-a1234-Business-snapsort/954e0a01-edbd-4e2d-bd4e-faf9c7073af7/scratchpad/lfw_dl uv run pytest tests/group -v`
-Expected: `14 passed` in about 6 min. If the LFW share lands under 0.96, stop and report the measured numbers. Do not lower the floor.
+Run: `SNAPSORT_FACE_TEST_DIR="$HOME/Downloads/for testing - normalized" SNAPSORT_LFW_DIR=/private/tmp/claude-501/-Users-a1234-Business-snapsort/954e0a01-edbd-4e2d-bd4e-faf9c7073af7/scratchpad/lfw_dl uv run pytest tests/group -v -s`
+Expected: `15 passed` in about 7 min. `-s` prints the 4 score lines: rebuild and deviation 4, each after 2 passes and after the re-ingest. Report that table to the user.
+
+If an LFW assertion fails, stop and report the measured table to the user before changing anything. That covers deviation 4 falling outside 5% of the rebuild, and the share landing under 0.96. Do not lower a floor, and do not switch the refresh method.
 
 Run: `uv run pytest -q`
-Expected: `102 passed, 5 skipped`.
+Expected: `103 passed, 5 skipped`.
 
 - [ ] **Step 3: Manual run on the phase 1 database**
 
@@ -847,4 +937,5 @@ git commit -m "Add env-gated grouping checks on labeled photos and LFW"
 - All tests pass, including:
   - exactly 3 persons on voogle's photo set
   - the LFW two-pass check: pair precision ≥ 99.5%, at most 1 mixed group, main-group share ≥ 96%
+  - deviation 4 within 5% of the full rebuild on LFW, after 2 passes and after a full re-ingest
 - The manual run on the phase 1 database gives the expected persons, with no mixed row on the sheet.
